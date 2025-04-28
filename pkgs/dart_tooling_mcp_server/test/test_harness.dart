@@ -149,6 +149,17 @@ class TestHarness {
     );
     return lastResult;
   }
+
+  /// Sends [request] to [mcpServerConnection] for a resource.
+  ///
+  /// Some methods will fail if the DTD connection is not yet ready.
+  Future<ReadResourceResult> readResource(
+    ReadResourceRequest request, {
+    int maxTries = 5,
+    bool expectError = false,
+  }) async {
+    return await mcpServerConnection.readResource(request);
+  }
 }
 
 /// The debug session for a single app.

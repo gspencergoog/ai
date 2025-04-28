@@ -63,6 +63,32 @@ void main() {
         ]);
       });
 
+      test('can get runtime errors as a resource', () async {
+        await testHarness.startDebugSession(
+          counterAppPath,
+          'lib/main.dart',
+          isFlutter: true,
+          args: ['--dart-define=include_layout_error=true'],
+        );
+        final resources =
+            (await testHarness.mcpServerConnection.listResources(
+              ListResourcesRequest(),
+            )).resources;
+        final runtimeErrorsResource = resources.singleWhere(
+          (t) => t.name == DartToolingDaemonSupport.getRuntimeErrorsTool.name,
+        );
+        final runtimeErrorsResult = await testHarness.readResource(
+          ReadResourceRequest(uri: runtimeErrorsResource.uri),
+        );
+
+        expect(runtimeErrorsResult.isError, isNot(true));
+        final errorCountRegex = RegExp(r'Found \d+ errors?:');
+        final errorText =
+            (runtimeErrorsResult.contents as List<TextContent>).first;
+        expect(errorText, contains(errorCountRegex));
+        expect(errorText, contains('A RenderFlex overflowed by'));
+      });
+
       test('can get runtime errors', () async {
         await testHarness.startDebugSession(
           counterAppPath,

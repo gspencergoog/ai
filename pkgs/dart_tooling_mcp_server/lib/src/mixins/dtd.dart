@@ -18,7 +18,7 @@ import 'package:vm_service/vm_service_io.dart';
 /// https://pub.dev/packages/dtd).
 ///
 /// The MCPServer must already have the [ToolsSupport] mixin applied.
-base mixin DartToolingDaemonSupport on ToolsSupport {
+base mixin DartToolingDaemonSupport on ToolsSupport, ResourcesSupport {
   DartToolingDaemon? _dtd;
 
   /// Whether or not the DTD extension to get the active debug sessions is
@@ -32,6 +32,16 @@ base mixin DartToolingDaemonSupport on ToolsSupport {
   /// [VmService] shuts down.
   @visibleForTesting
   final activeVmServices = <String, VmService>{};
+
+  final _errorSubscriptions =
+      <
+        String, // Debug session ID.
+        (
+          StreamSubscription<Event> extensionEvents,
+          StreamSubscription<Event> stderrEvents,
+          List<String> errors,
+        )
+      >{};
 
   /// Whether to await the disposal of all [VmService] objects in
   /// [activeVmServices] upon server shutdown or loss of DTD connection.
@@ -88,9 +98,11 @@ base mixin DartToolingDaemonSupport on ToolsSupport {
       }
       final vmService = await vmServiceConnectUri(debugSession.vmServiceUri);
       activeVmServices[debugSession.vmServiceUri] = vmService;
+      await _addErrorResource(debugSession);
       unawaited(
         vmService.onDone.then((_) {
           activeVmServices.remove(debugSession.vmServiceUri);
+          removeResource('dart://runtime_errors/${debugSession.id}');
           vmService.dispose();
         }),
       );
@@ -141,7 +153,7 @@ base mixin DartToolingDaemonSupport on ToolsSupport {
       );
       unawaited(_dtd!.done.then((_) async => await _resetDtd()));
 
-      _listenForServices();
+      await _listenForServices();
       return CallToolResult(
         content: [TextContent(text: 'Connection succeeded')],
       );
@@ -157,7 +169,7 @@ base mixin DartToolingDaemonSupport on ToolsSupport {
   /// `Editor.getDebugSessions` extension method is registered.
   ///
   /// The dart tooling daemon must be connected prior to calling this function.
-  void _listenForServices() {
+  Future<void> _listenForServices() async {
     final dtd = _dtd!;
     dtd.onEvent('Service').listen((e) async {
       switch (e.kind) {
@@ -165,15 +177,191 @@ base mixin DartToolingDaemonSupport on ToolsSupport {
           if (e.data['service'] == 'Editor' &&
               e.data['method'] == 'getDebugSessions') {
             _getDebugSessionsReady = true;
+            await _addErrorResources();
           }
         case 'ServiceUnregistered':
           if (e.data['service'] == 'Editor' &&
               e.data['method'] == 'getDebugSessions') {
             _getDebugSessionsReady = false;
+            await _removeErrorResources();
           }
       }
     });
-    dtd.streamListen('Service');
+    await dtd.streamListen('Service');
+  }
+
+  /// Retrieves runtime errors from the currently running debug session as a
+  /// resource that can be listened to for changes.
+  ///
+  /// The debug session id is encoded in the uri for the resource.
+  Future<ReadResourceResult> _runtimeErrorsResource(
+    ReadResourceRequest request,
+  ) async {
+    final parsedUri = Uri.parse(request.uri);
+    final debugSessionId = parsedUri.pathSegments.last;
+    if (_errorSubscriptions[debugSessionId] == null) {
+      return ReadResourceResult(
+        contents: [
+          TextResourceContents(
+            uri: request.uri,
+            text: 'No runtime errors found for session $debugSessionId.',
+          ),
+        ],
+        isError: true,
+      );
+    }
+    return ReadResourceResult(
+      contents: [
+        TextResourceContents(
+          uri: request.uri,
+          text: _errorSubscriptions[debugSessionId]!.$3.join('\n'),
+        ),
+      ],
+    );
+  }
+
+  /// Calls [callback] on the debug session encoded in the URI, if available.
+  Future<void> _callResourceOnVmService({
+    required String uri,
+    required Future<void> Function(VmService) callback,
+  }) async {
+    final dtd = _dtd;
+    if (dtd == null) {
+      return;
+    }
+
+    await updateActiveVmServices();
+
+    // Find the VM service that includes the debug session id.
+    final response = await dtd.getDebugSessions();
+    final debugSessions = response.debugSessions;
+    VmService? vmService;
+    final parsedUri = Uri.parse(uri);
+    final debugSessionId = parsedUri.pathSegments.last;
+    for (final debugSession in debugSessions) {
+      if (activeVmServices.containsKey(debugSession.vmServiceUri)) {
+        continue;
+      }
+      if (debugSession.id == debugSessionId) {
+        vmService = activeVmServices[debugSession.vmServiceUri]!;
+        break;
+      }
+    }
+    if (vmService == null) {
+      return;
+    }
+
+    await callback(vmService);
+  }
+
+  Future<void> _addErrorResource(DebugSession session) async {
+    final uri = 'dart://runtime_errors/${session.id}';
+    await _callResourceOnVmService(
+      uri: uri,
+      callback: (vmService) async {
+        final errors = <String>[];
+        StreamSubscription<Event>? extensionEvents;
+        StreamSubscription<Event>? stderrEvents;
+        try {
+          extensionEvents = vmService.onExtensionEvent.listen((Event e) {
+            if (e.extensionKind == 'Flutter.Error') {
+              // TODO(https://github.com/dart-lang/ai/issues/57): consider
+              // pruning this content down to only what is useful for the LLM to
+              // understand the error and its source.
+              errors.add(json.encode(json));
+            }
+            updateResource(
+              Resource(
+                name: 'runtime_errors',
+                uri: 'dart://runtime_errors/${session.id}',
+                description:
+                    'A list containing all of the runtime errors that have '
+                    'occurred since the last hot reload or restart in the debug '
+                    'session ${session.id}.',
+                mimeType: 'application/json',
+              ),
+            );
+          });
+          stderrEvents = vmService.onStderrEvent.listen((Event e) {
+            final message = decodeBase64(e.bytes!);
+            // TODO(https://github.com/dart-lang/ai/issues/57): consider
+            // pruning this content down to only what is useful for the LLM to
+            // understand the error and its source.
+            errors.add('{"stderr": "$message"}');
+            updateResource(
+              Resource(
+                name: 'runtime_errors',
+                uri: 'dart://runtime_errors/${session.id}',
+                description:
+                    'A list containing all of the runtime errors that have '
+                    'occurred since the last hot reload or restart in the debug '
+                    'session ${session.id}.',
+                mimeType: 'application/json',
+              ),
+            );
+          });
+
+          _errorSubscriptions[session.id] = (
+            extensionEvents,
+            stderrEvents,
+            errors,
+          );
+
+          await vmService.streamListen(EventStreams.kExtension);
+          await vmService.streamListen(EventStreams.kStderr);
+        } catch (e) {
+          await vmService.streamCancel(EventStreams.kExtension);
+          await vmService.streamCancel(EventStreams.kStderr);
+          return;
+        }
+      },
+    );
+
+    addResource(
+      Resource(
+        name: 'runtime_errors',
+        uri: 'dart://runtime_errors/${session.id}',
+        description:
+            'A list containing all of the runtime errors that have '
+            'occurred since the last hot reload or restart in the debug '
+            'session ${session.id}.',
+        mimeType: 'application/json',
+      ),
+      _runtimeErrorsResource,
+    );
+  }
+
+  Future<void> _removeErrorResource(DebugSession session) async {
+    final uri = 'dart://runtime_errors/${session.id}';
+    removeResource(uri);
+    final extensionEvents = _errorSubscriptions[session.id]?.$1;
+    final stderrEvents = _errorSubscriptions[session.id]?.$2;
+    await extensionEvents?.cancel();
+    await stderrEvents?.cancel();
+    await _callResourceOnVmService(
+      uri: uri,
+      callback: (VmService vmService) async {
+        await vmService.streamCancel(EventStreams.kExtension);
+        await vmService.streamCancel(EventStreams.kStderr);
+      },
+    );
+    _errorSubscriptions.remove(session.id);
+  }
+
+  Future<void> _addErrorResources() async {
+    final dtd = _dtd!;
+    final sessions = (await dtd.getDebugSessions()).debugSessions;
+    for (final session in sessions) {
+      await _addErrorResource(session);
+    }
+  }
+
+  Future<void> _removeErrorResources() async {
+    final dtd = _dtd!;
+    final sessions = (await dtd.getDebugSessions()).debugSessions;
+    for (final session in sessions) {
+      await _removeErrorResource(session);
+    }
   }
 
   /// Takes a screenshot of the currently running app.
@@ -314,7 +502,7 @@ base mixin DartToolingDaemonSupport on ToolsSupport {
               // TODO(https://github.com/dart-lang/ai/issues/57): consider
               // pruning this content down to only what is useful for the LLM to
               // understand the error and its source.
-              errors.add(e.json.toString());
+              errors.add(json.encode(e.json));
             }
           });
           stderrEvents = vmService.onStderrEventWithHistory.listen((Event e) {
@@ -565,9 +753,7 @@ base mixin DartToolingDaemonSupport on ToolsSupport {
   );
 
   static final _noActiveDebugSession = CallToolResult(
-    content: [
-      TextContent(text: 'No active debug session to take a screenshot'),
-    ],
+    content: [TextContent(text: 'No active debug session')],
     isError: true,
   );
 
