@@ -5,19 +5,18 @@ The `dart_schema_builder` package is being updated to be compliant with the [JSO
 ## Current Status
 
 - **Test Suite Enabled:** All non-optional, non-remote tests from the official JSON Schema Test Suite for Draft 2020-12 have been enabled. This provides a clear view of the remaining compliance gaps.
-- **Initial Compliance:** A number of foundational keywords are passing in basic scenarios.
-- **Identified Failure Areas:** The enabled test suite has confirmed that several key areas require significant work to become compliant. The primary areas of failure include:
-  - `$dynamicRef` and `$dynamicAnchor` resolution.
-  - `$ref` resolution, particularly with non-JSON pointer references and interaction with `$dynamicAnchor`.
-  - `unevaluatedProperties` and `unevaluatedItems` when used with applicator keywords (`allOf`, `anyOf`, etc.).
-  - `not` keyword in complex validation scenarios.
+- **Reference Resolution Progress:** Significant progress has been made on `$ref` and `$dynamicRef` resolution. The implementation now handles local, file-based, and anchor-based (`$id`, `$anchor`) references. Most `refResolutionError` failures have been eliminated.
+- **Identified Failure Areas:** While direct resolution errors are mostly fixed, numerous tests for `$ref` and `$dynamicRef` still fail. The failures now point to incorrect validation logic *after* the reference has been resolved, especially concerning how sibling keywords and applicator keywords (`allOf`, `anyOf`, etc.) interact with the resolved schema. The primary areas of failure include:
+  - **`$dynamicRef` and `$dynamicAnchor`:** The dynamic scope resolution is not fully correct, leading to false positives and negatives where data is incorrectly validated against the wrong schema.
+  - **`$ref` with Sibling Keywords:** The logic for applying keywords alongside a `$ref` is causing infinite recursion or incorrect validation outcomes.
+  - **`unevaluatedProperties` and `unevaluatedItems`:** These keywords are still largely failing, likely blocked by the remaining issues in reference resolution and applicator logic.
 
 ## Next Steps
 
-The main focus is to resolve the fundamental reference resolution mechanisms, as these are critical blockers for a large portion of the failing tests.
+The main focus remains on resolving the fundamental reference and applicator mechanisms, as these are critical blockers for a large portion of the failing tests.
 
-1. **`$ref` and `$dynamicRef` Resolution:** This is the highest priority. The current implementation does not correctly handle the dynamic scope for `$dynamicRef` and fails to resolve non-pointer `$ref`s (e.g., by `$id` or `$anchor`). A robust and spec-compliant implementation is required.
-2. **`unevaluatedProperties` and `unevaluatedItems`:** The logic for tracking evaluated properties and items across applicator keywords is incorrect. This will likely need to be addressed after the `$ref` and `$dynamicRef` resolution is fixed, as proper resolution is key to knowing which subschemas have been applied.
-3. **`not` Keyword Failures:** Address failures related to the `not` keyword, especially in scenarios involving complex applicators.
-4. **Remote References:** Implement support for remote references (i.e., `$ref` pointing to other files or URLs). This is a lower priority than fixing the local resolution logic.
-5. **Format Vocabulary:** Implement the vocabulary check for the `format` keyword to enable assertion behavior based on the schema's `$vocabulary`.
+1.  **`$ref` with Sibling Keyword Validation:** This is the highest priority. The current implementation that merges a referenced schema with sibling keywords is causing infinite recursion. This needs to be fixed to correctly handle validation for keywords that appear alongside a `$ref`.
+2.  **`$dynamicRef` Scope Resolution:** Systematically debug the remaining `dynamicRef.json` test failures to correct the dynamic scope resolution and ensure the correct schema is used for validation in all scenarios.
+3.  **`unevaluatedProperties` and `unevaluatedItems`:** Once reference resolution and applicator logic are stable, revisit the implementation for tracking evaluated properties and items to ensure it is spec-compliant.
+4.  **Remote and Complex References:** Full support for remote references (including HTTP and URNs) and more complex resolution scenarios needs to be completed.
+5.  **Format Vocabulary:** Implement the vocabulary check for the `format` keyword to enable assertion behavior based on the schema's `$vocabulary`.

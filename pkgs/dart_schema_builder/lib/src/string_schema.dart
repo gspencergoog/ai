@@ -4,11 +4,10 @@
 
 import 'dart:collection';
 import 'package:characters/characters.dart';
-import 'schema.dart';
 import 'constants.dart';
 import 'json_type.dart';
+import 'schema.dart';
 import 'validation_error.dart';
-import 'schema_validation.dart';
 
 /// A JSON Schema definition for a String.
 extension type const StringSchema.fromMap(Map<String, Object?> _value)

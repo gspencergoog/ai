@@ -2,11 +2,9 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import 'dart:collection';
-import 'schema.dart';
 import 'constants.dart';
 import 'json_type.dart';
-import 'validation_error.dart';
+import 'schema.dart';
 import 'schema_validation.dart';
 
 /// A JSON Schema definition for an object with properties.

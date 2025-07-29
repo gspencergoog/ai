@@ -11,19 +11,6 @@ import 'null_schema.dart';
 import 'number_schema.dart';
 import 'object_schema.dart';
 import 'string_schema.dart';
-import 'schema_validation.dart';
-
-export 'boolean_schema.dart';
-export 'constants.dart';
-export 'integer_schema.dart';
-export 'json_type.dart';
-export 'list_schema.dart';
-export 'null_schema.dart';
-export 'number_schema.dart';
-export 'object_schema.dart';
-export 'string_schema.dart';
-export 'validation_error.dart';
-export 'schema_validation.dart';
 
 /// A JSON Schema object defining any kind of property.
 ///
@@ -54,7 +41,6 @@ extension type Schema.fromMap(Map<String, Object?> _value) {
     String? $dynamicRef,
     String? $anchor,
     String? $dynamicAnchor,
-    String? $id,
     String? $id,
 
     // Schema composition
@@ -90,7 +76,6 @@ extension type Schema.fromMap(Map<String, Object?> _value) {
       if ($ref != null) kRef: $ref,
       if ($dynamicAnchor != null) kDynamicAnchor: $dynamicAnchor,
       if ($id != null) '\$id': $id,
-      if ($id != null) '\$id': $id,
       if (allOf != null) 'allOf': allOf,
       if (anyOf != null) 'anyOf': anyOf,
       if (oneOf != null) 'oneOf': oneOf,
@@ -124,9 +109,7 @@ extension type Schema.fromMap(Map<String, Object?> _value) {
   static const nil = NullSchema.new;
 
   factory Schema.fromBoolean(bool value, {List<String> jsonPath = const []}) {
-    return Schema.fromMap(
-      value ? {} : {'not': {}},
-    );
+    return Schema.fromMap(value ? {} : {'not': {}});
   }
 
   Map<String, Object?> get value => _value;
@@ -151,7 +134,6 @@ extension type Schema.fromMap(Map<String, Object?> _value) {
   String? get $dynamicRef => _value[kDynamicRef] as String?;
   String? get $anchor => _value[kAnchor] as String?;
   String? get $dynamicAnchor => _value[kDynamicAnchor] as String?;
-  String? get $id => _value['\$id'] as String?;
   String? get $id => _value['\$id'] as String?;
 
   // Schema Composition

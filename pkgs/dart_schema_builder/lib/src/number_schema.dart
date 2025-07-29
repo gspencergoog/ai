@@ -3,10 +3,9 @@
 // BSD-style license that can be found in the LICENSE file.
 
 import 'dart:collection';
-import 'schema.dart';
 import 'json_type.dart';
+import 'schema.dart';
 import 'validation_error.dart';
-import 'schema_validation.dart';
 
 /// A JSON Schema definition for a [num].
 extension type NumberSchema.fromMap(Map<String, Object?> _value)

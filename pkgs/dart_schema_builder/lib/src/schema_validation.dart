@@ -3,25 +3,34 @@
 // BSD-style license that can be found in the LICENSE file.
 
 import 'dart:collection';
-import 'package:collection/collection.dart';
+import 'dart:convert';
+import 'dart:io';
+
+import 'constants.dart';
+import 'integer_schema.dart';
+import 'json_type.dart';
+import 'list_schema.dart';
+import 'number_schema.dart';
+import 'object_schema.dart';
 import 'schema.dart';
+import 'string_schema.dart';
 import 'utils.dart';
 import 'validation_error.dart';
-import 'json_type.dart';
-import 'object_schema.dart';
-import 'list_schema.dart';
-import 'string_schema.dart';
-import 'number_schema.dart';
 
 class ValidationContext {
   final Schema rootSchema;
   final bool strictFormat;
   final List<Schema> dynamicScope;
+  final Set<int> evaluatedItemIndexes;
+  final Uri? sourceUri;
 
   ValidationContext(
     this.rootSchema, {
     this.strictFormat = false,
-  }) : dynamicScope = [rootSchema];
+    Set<int>? evaluatedItemIndexes,
+    this.sourceUri,
+  }) : dynamicScope = [rootSchema],
+       evaluatedItemIndexes = evaluatedItemIndexes ?? {};
 }
 
 void validateSubSchema(
@@ -79,20 +88,15 @@ extension SchemaValidation on Schema {
   Map<String, Schema>? mapToSchemaOrBool(String key) {
     final v = value[key];
     if (v is Map) {
-      return v.map(
-        (key, value) {
-          if (value is bool) {
-            return MapEntry(
-              key as String,
-              Schema.fromBoolean(value),
-            );
-          }
-          return MapEntry(
-            key as String,
-            Schema.fromMap(value as Map<String, Object?>),
-          );
-        },
-      );
+      return v.map((key, value) {
+        if (value is bool) {
+          return MapEntry(key as String, Schema.fromBoolean(value));
+        }
+        return MapEntry(
+          key as String,
+          Schema.fromMap(value as Map<String, Object?>),
+        );
+      });
     }
     return null;
   }
@@ -101,9 +105,17 @@ extension SchemaValidation on Schema {
   ///
   /// Returns a list of [ValidationError] if validation fails,
   /// or an empty list if validation succeeds.
-  List<ValidationError> validate(Object? data, {bool strictFormat = false}) {
+  List<ValidationError> validate(
+    Object? data, {
+    bool strictFormat = false,
+    Uri? sourceUri,
+  }) {
     final failures = createHashSet();
-    final context = ValidationContext(this, strictFormat: strictFormat);
+    final context = ValidationContext(
+      this,
+      strictFormat: strictFormat,
+      sourceUri: sourceUri,
+    );
     validateSchema(data, [], failures, context);
     return failures.toList();
   }
@@ -117,7 +129,11 @@ extension SchemaValidation on Schema {
     context.dynamicScope.add(this);
 
     if ($dynamicRef case final ref?) {
-      final referencedSchema = resolveDynamicRef(ref, context.dynamicScope);
+      final referencedSchema = resolveDynamicRef(
+        ref,
+        context.dynamicScope,
+        context,
+      );
       if (referencedSchema != null) {
         referencedSchema.validateSchema(
           data,
@@ -131,9 +147,12 @@ extension SchemaValidation on Schema {
     }
 
     if ($ref case final ref?) {
-      final referencedSchema = resolveRef(ref, context.rootSchema);
+      final referencedSchema = resolveRef(ref, context.rootSchema, context);
       if (referencedSchema != null) {
-        referencedSchema.validateSchema(
+        final mergedSchemaMap = {...referencedSchema.value, ...value};
+        mergedSchemaMap.remove(kRef);
+        final mergedSchema = Schema.fromMap(mergedSchemaMap);
+        mergedSchema.validateSchema(
           data,
           currentPath,
           accumulatedFailures,
@@ -183,13 +202,7 @@ extension SchemaValidation on Schema {
     if (allOf case final List allOfList?) {
       for (final subSchema in allOfList) {
         final tempFailures = createHashSet();
-        validateSubSchema(
-          subSchema,
-          data,
-          currentPath,
-          tempFailures,
-          context,
-        );
+        validateSubSchema(subSchema, data, currentPath, tempFailures, context);
         accumulatedFailures.addAll(tempFailures);
       }
     }
@@ -198,13 +211,7 @@ extension SchemaValidation on Schema {
       var passedCount = 0;
       for (final subSchema in anyOfList) {
         final tempFailures = createHashSet();
-        validateSubSchema(
-          subSchema,
-          data,
-          currentPath,
-          tempFailures,
-          context,
-        );
+        validateSubSchema(subSchema, data, currentPath, tempFailures, context);
         if (tempFailures.isEmpty) {
           passedCount++;
         }
@@ -220,13 +227,7 @@ extension SchemaValidation on Schema {
       var passedCount = 0;
       for (final subSchema in oneOfList) {
         final tempFailures = createHashSet();
-        validateSubSchema(
-          subSchema,
-          data,
-          currentPath,
-          tempFailures,
-          context,
-        );
+        validateSubSchema(subSchema, data, currentPath, tempFailures, context);
         if (tempFailures.isEmpty) {
           passedCount++;
         }
@@ -246,13 +247,7 @@ extension SchemaValidation on Schema {
 
     if (not case final notSchema?) {
       final tempFailures = createHashSet();
-      validateSubSchema(
-        notSchema,
-        data,
-        currentPath,
-        tempFailures,
-        context,
-      );
+      validateSubSchema(notSchema, data, currentPath, tempFailures, context);
       if (tempFailures.isEmpty) {
         accumulatedFailures.add(
           ValidationError(
@@ -289,7 +284,12 @@ extension SchemaValidation on Schema {
     }
 
     // 4. Type-Specific Validation
-    validateTypeSpecificKeywords(data, currentPath, accumulatedFailures, context);
+    validateTypeSpecificKeywords(
+      data,
+      currentPath,
+      accumulatedFailures,
+      context,
+    );
     context.dynamicScope.removeLast();
   }
 
@@ -387,7 +387,8 @@ extension SchemaValidation on Schema {
     ValidationContext context,
   ) {
     final objectSchema = this as ObjectSchema;
-    if (objectSchema.minProperties case final min? when data.keys.length < min) {
+    if (objectSchema.minProperties case final min?
+        when data.keys.length < min) {
       accumulatedFailures.add(
         ValidationError(
           ValidationErrorType.minPropertiesNotMet,
@@ -399,7 +400,8 @@ extension SchemaValidation on Schema {
       );
     }
 
-    if (objectSchema.maxProperties case final max? when data.keys.length > max) {
+    if (objectSchema.maxProperties case final max?
+        when data.keys.length > max) {
       accumulatedFailures.add(
         ValidationError(
           ValidationErrorType.maxPropertiesExceeded,
@@ -594,7 +596,7 @@ extension SchemaValidation on Schema {
       }
     }
 
-    final evaluatedItems = List<bool>.filled(data.length, false);
+    final evaluatedItems = context.evaluatedItemIndexes;
     if (listSchema.contains case final containsSchema?) {
       final matches = <int>[];
       for (var i = 0; i < data.length; i++) {
@@ -620,13 +622,14 @@ extension SchemaValidation on Schema {
       // This implies that if contains is present, all items that match it are
       // considered evaluated.
       for (final index in matches) {
-        evaluatedItems[index] = true;
+        evaluatedItems.add(index);
       }
 
       final matchCount = matches.length;
       if (listSchema.minContains == 0 && data.isEmpty) {
         // This is a valid case.
-      } else if (matchCount == 0 && (listSchema.minContains == null || listSchema.minContains! > 0)) {
+      } else if (matchCount == 0 &&
+          (listSchema.minContains == null || listSchema.minContains! > 0)) {
         accumulatedFailures.add(
           ValidationError(
             ValidationErrorType.containsInvalid,
@@ -661,7 +664,7 @@ extension SchemaValidation on Schema {
 
     if (listSchema.prefixItems case final pItems?) {
       for (var i = 0; i < pItems.length && i < data.length; i++) {
-        evaluatedItems[i] = true;
+        evaluatedItems.add(i);
         currentPath.add(i.toString());
         validateSubSchema(
           pItems[i],
@@ -676,7 +679,7 @@ extension SchemaValidation on Schema {
     if (listSchema.items case final itemSchema?) {
       final startIndex = listSchema.prefixItems?.length ?? 0;
       for (var i = startIndex; i < data.length; i++) {
-        evaluatedItems[i] = true;
+        evaluatedItems.add(i);
         currentPath.add(i.toString());
         validateSubSchema(
           itemSchema,
@@ -690,7 +693,7 @@ extension SchemaValidation on Schema {
     }
     if (listSchema.unevaluatedItems case final ui?) {
       for (var i = 0; i < data.length; i++) {
-        if (!evaluatedItems[i]) {
+        if (!evaluatedItems.contains(i)) {
           currentPath.add(i.toString());
           if (ui is bool && !ui) {
             accumulatedFailures.add(
@@ -731,25 +734,60 @@ extension SchemaValidation on Schema {
     throw StateError('Unknown JSON type for value: $data');
   }
 
-  Schema? resolveRef(String ref, Schema rootSchema) {
-    if (!ref.startsWith('#')) {
-      // For now, only support local refs.
-      return _findId(ref, rootSchema);
-    }
-    final pointer = ref.substring(1);
-    if (pointer.isEmpty) {
-      return rootSchema;
-    }
-    if (!pointer.startsWith('/')) {
-      // It's an anchor.
-      return _findAnchor(pointer, rootSchema);
+  Schema? resolveRef(String ref, Schema rootSchema, ValidationContext context) {
+    if (ref.startsWith('#')) {
+      final pointer = ref.substring(1);
+      if (pointer.isEmpty) {
+        return rootSchema;
+      }
+      if (!pointer.startsWith('/')) {
+        // It's an anchor.
+        return _findAnchor(pointer, rootSchema);
+      }
+      return _resolveJsonPointer(rootSchema, pointer);
     }
 
+    // It might be an ID or an anchor.
+    final byId = _findId(ref, rootSchema);
+    if (byId != null) {
+      return byId;
+    }
+    final byAnchor = _findAnchor(ref, rootSchema);
+    if (byAnchor != null) {
+      return byAnchor;
+    }
+
+    // It's a remote reference.
+    if (context.sourceUri == null) {
+      return null; // Cannot resolve without a source URI.
+    }
+
+    final parts = ref.split('#');
+    final remoteUri = context.sourceUri!.resolve(parts[0]);
+    final pointer = parts.length > 1 ? '#${parts[1]}' : '';
+
+    try {
+      final file = File.fromUri(remoteUri);
+      final content = file.readAsStringSync();
+      final remoteSchema = Schema.fromMap(
+        jsonDecode(content) as Map<String, Object?>,
+      );
+      if (pointer.isEmpty) {
+        return remoteSchema;
+      }
+      return resolveRef(pointer, remoteSchema, context);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Schema? _resolveJsonPointer(Schema schema, String pointer) {
     final parts = pointer.substring(1).split('/');
-    dynamic current = rootSchema;
+    dynamic current = schema;
     for (final part in parts) {
-      final decodedPart =
-          part.replaceAll('~1', '/').replaceAll('~0', '~');
+      final decodedPart = Uri.decodeComponent(
+        part,
+      ).replaceAll('~1', '/').replaceAll('~0', '~');
       if (current is Schema) {
         if (!current.value.containsKey(decodedPart)) {
           return null;
@@ -835,7 +873,11 @@ extension SchemaValidation on Schema {
     return result;
   }
 
-  Schema? resolveDynamicRef(String ref, List<Schema> dynamicScope) {
+  Schema? resolveDynamicRef(
+    String ref,
+    List<Schema> dynamicScope,
+    ValidationContext context,
+  ) {
     if (!ref.startsWith('#')) {
       // For now, only support local refs.
       return null;
@@ -852,7 +894,7 @@ extension SchemaValidation on Schema {
       }
     }
     // Fallback to normal $ref resolution against the root schema.
-    return resolveRef(ref, dynamicScope.first);
+    return resolveRef(ref, dynamicScope.first, context);
   }
 
   Schema? _findDynamicAnchor(String anchorName, List<Schema> dynamicScope) {
