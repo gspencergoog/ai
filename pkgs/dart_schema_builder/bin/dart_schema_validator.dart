@@ -14,7 +14,8 @@ void main(List<String> arguments) {
     exit(1);
   }
 
-  final schemaJson = jsonDecode(schemaFile.readAsStringSync()) as Map<String, Object?>;
+  final schemaJson =
+      jsonDecode(schemaFile.readAsStringSync()) as Map<String, Object?>;
   final schema = Schema.fromMap(schemaJson);
 
   if (argResults.rest.isEmpty) {

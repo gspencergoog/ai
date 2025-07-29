@@ -42,8 +42,7 @@ void main() {
   // This event is more complex and includes a list of uploaded files.
   final fileUploadEventPayloadSchema = ObjectSchema(
     title: 'File Upload Event Payload',
-    description:
-        'Schema for the data associated with a file upload event.',
+    description: 'Schema for the data associated with a file upload event.',
     required: ['userId', 'files'],
     properties: {
       'userId': StringSchema(
@@ -52,7 +51,8 @@ void main() {
       'files': ListSchema(
         description: 'A list of files that were uploaded.',
         minItems: 1, // At least one file must be uploaded.
-        // Each item in the list must be a unique object matching the file schema.
+        // Each item in the list must be a unique object matching the file
+        // schema.
         uniqueItems: true,
         items: ObjectSchema(
           required: ['filename', 'size'],
@@ -111,10 +111,7 @@ void main() {
     'eventId': 'a1b2c3d4-e5f6-7890-1234-567890abcdef',
     'timestamp': '2025-07-28T10:00:00Z',
     'eventType': 'user_login',
-    'payload': {
-      'userId': 'user-123',
-      'ipAddress': '192.168.1.1',
-    },
+    'payload': {'userId': 'user-123', 'ipAddress': '192.168.1.1'},
   };
   validateAndPrintResults(systemEventSchema, validLoginEvent);
 
@@ -126,7 +123,11 @@ void main() {
     'payload': {
       'userId': 'user-456',
       'files': [
-        {'filename': 'document.pdf', 'size': 1024, 'mimeType': 'application/pdf'},
+        {
+          'filename': 'document.pdf',
+          'size': 1024,
+          'mimeType': 'application/pdf',
+        },
         {'filename': 'image.png', 'size': 51200},
       ],
     },
@@ -160,7 +161,8 @@ void main() {
   validateAndPrintResults(systemEventSchema, invalidLoginPayload);
 }
 
-/// Helper function to run validation and print the results in a friendly format.
+/// Helper function to run validation and print the results in a friendly
+/// format.
 void validateAndPrintResults(Schema schema, Map<String, Object?> data) {
   final errors = schema.validate(data);
 
@@ -169,7 +171,8 @@ void validateAndPrintResults(Schema schema, Map<String, Object?> data) {
   } else {
     print('❌ Failure! The data is invalid. Found ${errors.length} errors:');
     for (final error in errors) {
-      // The toErrorString() method provides a human-readable summary of the error.
+      // The toErrorString() method provides a human-readable summary of the
+      // error.
       print('  - ${error.toErrorString()}');
     }
   }
