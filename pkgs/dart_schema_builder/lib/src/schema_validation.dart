@@ -139,9 +139,15 @@ extension SchemaValidation on Schema {
           accumulatedFailures,
           context,
         );
+      } else {
+        accumulatedFailures.add(
+          ValidationError(
+            ValidationErrorType.refResolutionError,
+            path: currentPath,
+            details: 'Failed to resolve reference: $ref',
+          ),
+        );
       }
-      // Not handling the case where the ref is not found for now.
-      // The test suite will tell us what to do.
       context.dynamicScope.removeLast();
       return;
     }
@@ -518,16 +524,24 @@ extension SchemaValidation on Schema {
           );
         }
         currentPath.removeLast();
-      } else if (objectSchema.unevaluatedProperties case final up? when up is bool && !up) {
-        // Only applies if additionalProperties is not defined
+      } else if (objectSchema[kUnevaluatedProperties] case final up?) {
         currentPath.add(dataKey);
-        accumulatedFailures.add(
-          ValidationError(
-            ValidationErrorType.unevaluatedPropertyNotAllowed,
-            path: currentPath,
-            details: 'Unevaluated property "$dataKey" is not allowed',
-          ),
-        );
+        if (up is bool && !up) {
+          accumulatedFailures.add(
+            ValidationError(
+              ValidationErrorType.unevaluatedPropertyNotAllowed,
+              path: currentPath,
+              details: 'Unevaluated property "$dataKey" is not allowed',
+            ),
+          );
+        } else if (up is Map) {
+          Schema.fromMap(up.cast<String, Object?>()).validateSchema(
+            data[dataKey],
+            currentPath,
+            accumulatedFailures,
+            context,
+          );
+        }
         currentPath.removeLast();
       }
     }
@@ -720,7 +734,7 @@ extension SchemaValidation on Schema {
   Schema? resolveRef(String ref, Schema rootSchema) {
     if (!ref.startsWith('#')) {
       // For now, only support local refs.
-      return null;
+      return _findId(ref, rootSchema);
     }
     final pointer = ref.substring(1);
     if (pointer.isEmpty) {
@@ -762,14 +776,48 @@ extension SchemaValidation on Schema {
     return null;
   }
 
-  Schema? _findAnchor(String anchorName, Schema schema) {
+  Schema? _findId(String id, Schema schema) {
     Schema? result;
+    final visited = <Map<String, Object?>>{};
 
     void visit(dynamic current) {
       if (result != null) return;
       if (current is Map<String, Object?>) {
+        if (visited.contains(current)) return;
+        visited.add(current);
+
         final currentSchema = Schema.fromMap(current);
-        if (currentSchema.$anchor == anchorName) {
+        if (currentSchema.$id == id) {
+          result = currentSchema;
+          return;
+        }
+        for (final value in current.values) {
+          visit(value);
+        }
+      } else if (current is List) {
+        for (final item in current) {
+          visit(item);
+        }
+      }
+    }
+
+    visit(schema.value);
+    return result;
+  }
+
+  Schema? _findAnchor(String anchorName, Schema schema) {
+    Schema? result;
+    final visited = <Map<String, Object?>>{};
+
+    void visit(dynamic current) {
+      if (result != null) return;
+      if (current is Map<String, Object?>) {
+        if (visited.contains(current)) return;
+        visited.add(current);
+
+        final currentSchema = Schema.fromMap(current);
+        if (currentSchema.$anchor == anchorName ||
+            currentSchema.$dynamicAnchor == anchorName) {
           result = currentSchema;
           return;
         }
@@ -798,19 +846,51 @@ extension SchemaValidation on Schema {
     }
     if (!pointer.startsWith('/')) {
       // It's a dynamic anchor.
-      return _findDynamicAnchor(pointer, dynamicScope);
+      final anchorSchema = _findDynamicAnchor(pointer, dynamicScope);
+      if (anchorSchema != null) {
+        return anchorSchema;
+      }
     }
-    // It's a JSON pointer, which for dynamic refs is resolved against the root of the
-    // schema, which is the first item in the dynamic scope.
+    // Fallback to normal $ref resolution against the root schema.
     return resolveRef(ref, dynamicScope.first);
   }
 
   Schema? _findDynamicAnchor(String anchorName, List<Schema> dynamicScope) {
     for (final schema in dynamicScope.reversed) {
-      if (schema.$dynamicAnchor == anchorName) {
-        return schema;
+      final found = _findDynamicAnchorInSchema(anchorName, schema);
+      if (found != null) {
+        return found;
       }
     }
     return null;
+  }
+
+  Schema? _findDynamicAnchorInSchema(String anchorName, Schema schema) {
+    Schema? result;
+    final visited = <Map<String, Object?>>{};
+
+    void visit(dynamic current) {
+      if (result != null) return;
+      if (current is Map<String, Object?>) {
+        if (visited.contains(current)) return;
+        visited.add(current);
+
+        final currentSchema = Schema.fromMap(current);
+        if (currentSchema.$dynamicAnchor == anchorName) {
+          result = currentSchema;
+          return;
+        }
+        for (final value in current.values) {
+          visit(value);
+        }
+      } else if (current is List) {
+        for (final item in current) {
+          visit(item);
+        }
+      }
+    }
+
+    visit(schema.value);
+    return result;
   }
 }

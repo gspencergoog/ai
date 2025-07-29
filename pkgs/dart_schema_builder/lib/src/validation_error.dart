@@ -13,6 +13,7 @@ enum ValidationErrorType {
   constMismatch,
   enumValueNotAllowed,
   formatInvalid,
+  refResolutionError,
 
   // Schema combinators
   allOfNotMet,
