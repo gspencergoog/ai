@@ -1,3 +1,5 @@
+
+
 // Copyright (c) 2025, the Dart project authors.  Please see the AUTHORS file
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
@@ -5,6 +7,56 @@
 import 'dart:collection';
 
 import 'package:collection/collection.dart';
+import 'package:characters/characters.dart';
+
+const kAdditionalProperties = 'additionalProperties';
+const kAllOf = 'allOf';
+const kAnyOf = 'anyOf';
+const kConst = 'const';
+const kContains = 'contains';
+const kDefault = 'default';
+const kDependentRequired = 'dependentRequired';
+const kDependentSchemas = 'dependentSchemas';
+const kDescription = 'description';
+const kElse = 'else';
+const kEnum = 'enum';
+const kExamples = 'examples';
+const kExclusiveMaximum = 'exclusiveMaximum';
+const kExclusiveMinimum = 'exclusiveMinimum';
+const kFormat = 'format';
+const kIf = 'if';
+const kItems = 'items';
+const kMaximum = 'maximum';
+const kMaxItems = 'maxItems';
+const kMaxLength = 'maxLength';
+const kMaxProperties = 'maxProperties';
+const kMinimum = 'minimum';
+const kMinItems = 'minItems';
+const kMinLength = 'minLength';
+const kMinProperties = 'minProperties';
+const kMultipleOf = 'multipleOf';
+const kNot = 'not';
+const kOneOf = 'oneOf';
+const kPattern = 'pattern';
+const kPatternProperties = 'patternProperties';
+const kPrefixItems = 'prefixItems';
+const kProperties = 'properties';
+const kPropertyNames = 'propertyNames';
+const kReadOnly = 'readOnly';
+const kRef = '\$ref';
+const kRequired = 'required';
+const kThen = 'then';
+const kTitle = 'title';
+const kType = 'type';
+const kUnevaluatedItems = 'unevaluatedItems';
+const kUnevaluatedProperties = 'unevaluatedProperties';
+const kUniqueItems = 'uniqueItems';
+const kWriteOnly = 'writeOnly';
+const kDefs = '\$defs';
+const kComment = '\$comment';
+const kDeprecated = 'deprecated';
+const kMinContains = 'minContains';
+const kMaxContains = 'maxContains';
 
 /// The valid types for properties in a JSON schema.
 enum JsonType {
@@ -13,7 +65,7 @@ enum JsonType {
   string('string'),
   num('number'),
   int('integer'),
-  bool('boolean'),
+  boolean('boolean'),
   nil('null');
 
   const JsonType(this.typeName);
@@ -144,15 +196,15 @@ extension type Schema.fromMap(Map<String, Object?> _value) {
     String? $ref,
 
     // Schema composition
-    List<Schema>? allOf,
-    List<Schema>? anyOf,
-    List<Schema>? oneOf,
-    Schema? not,
+    List<Object?>? allOf,
+    List<Object?>? anyOf,
+    List<Object?>? oneOf,
+    Object? not,
 
     // Conditional subschemas
-    Schema? ifSchema,
-    Schema? thenSchema,
-    Schema? elseSchema,
+    Object? ifSchema,
+    Object? thenSchema,
+    Object? elseSchema,
     Map<String, Schema>? dependentSchemas,
   }) {
     final typeValue = switch (type) {
@@ -206,6 +258,18 @@ extension type Schema.fromMap(Map<String, Object?> _value) {
   /// Alias for [NullSchema.new].
   static const nil = NullSchema.new;
 
+  factory Schema.fromBoolean(
+    bool value, {
+    List<String> jsonPath = const [],
+  }) {
+    return Schema.fromMap({
+      if (value)
+        kComment: 'boolean schema true'
+      else
+        kComment: 'boolean schema false',
+    });
+  }
+
   Object? operator [](String key) => _value[key];
 
   // Core Keywords
@@ -226,20 +290,77 @@ extension type Schema.fromMap(Map<String, Object?> _value) {
   String? get $ref => _value['\$ref'] as String?;
 
   // Schema Composition
-  List<Schema>? get allOf => (_value['allOf'] as List?)?.cast<Schema>();
-  List<Schema>? get anyOf => (_value['anyOf'] as List?)?.cast<Schema>();
-  List<Schema>? get oneOf => (_value['oneOf'] as List?)?.cast<Schema>();
-  Schema? get not => _value['not'] as Schema?;
+  List<Object?>? get allOf => (_value['allOf'] as List?)?.cast<Object?>();
+  List<Object?>? get anyOf => (_value['anyOf'] as List?)?.cast<Object?>();
+  List<Object?>? get oneOf => (_value['oneOf'] as List?)?.cast<Object?>();
+  Object? get not => _value['not'];
 
   // Conditional Subschemas
-  Schema? get ifSchema => _value['if'] as Schema?;
-  Schema? get thenSchema => _value['then'] as Schema?;
-  Schema? get elseSchema => _value['else'] as Schema?;
+  Object? get ifSchema => _value['if'];
+  Object? get thenSchema => _value['then'];
+  Object? get elseSchema => _value['else'];
   Map<String, Schema>? get dependentSchemas =>
       (_value['dependentSchemas'] as Map?)?.cast<String, Schema>();
 }
 
+void _validateSubSchema(
+  Object? schema,
+  Object? data,
+  List<String> currentPath,
+  HashSet<ValidationError> accumulatedFailures,
+  Schema rootSchema,
+) {
+  if (schema is bool) {
+    if (schema == false) {
+      accumulatedFailures.add(
+        ValidationError(
+          ValidationErrorType.custom,
+          path: currentPath,
+          details: 'Schema is false',
+        ),
+      );
+    }
+    // If schema is true, it's always valid, so do nothing.
+    return;
+  }
+  if (schema is Map) {
+    Schema.fromMap(schema.cast<String, Object?>())._validateSchema(
+      data,
+      currentPath,
+      accumulatedFailures,
+      rootSchema,
+    );
+    return;
+  }
+  // This should not happen for a valid schema file.
+}
+
 extension SchemaValidation on Schema {
+  Schema? _schemaOrBool(String key) {
+    final value = _value[key];
+    if (value == null) return null;
+    if (value is bool) {
+      return Schema.fromBoolean(
+        value,
+        jsonPath: [key],
+      );
+    }
+    return Schema.fromMap(value as Map<String, Object?>);
+  }
+
+  Map<String, Schema>? _mapToSchema(String key) {
+    final value = _value[key];
+    if (value is Map) {
+      return value.map(
+        (key, value) => MapEntry(
+          key as String,
+          Schema.fromMap(value as Map<String, Object?>),
+        ),
+      );
+    }
+    return null;
+  }
+
   /// Validates the given [data] against this schema.
   ///
   /// Returns a list of [ValidationError] if validation fails,
@@ -256,96 +377,142 @@ extension SchemaValidation on Schema {
     HashSet<ValidationError> accumulatedFailures,
     Schema rootSchema,
   ) {
-    // TODO: Implement $ref logic.
+    if ($ref case final ref?) {
+      final referencedSchema = _resolveRef(ref, rootSchema);
+      if (referencedSchema != null) {
+        _validateSubSchema(
+          referencedSchema,
+          data,
+          currentPath,
+          accumulatedFailures,
+          rootSchema,
+        );
+      }
+      // Not handling the case where the ref is not found for now.
+      // The test suite will tell us what to do.
+      return;
+    }
 
     // 1. Conditional Applicators: if/then/else
     if (ifSchema case final ifS?) {
       final tempFailures = _createHashSet();
-      ifS._validateSchema(data, currentPath, tempFailures, rootSchema);
+      _validateSubSchema(ifS, data, currentPath, tempFailures, rootSchema);
       if (tempFailures.isEmpty) {
         if (thenSchema case final thenS?) {
-          thenS._validateSchema(
-              data, currentPath, accumulatedFailures, rootSchema);
+          _validateSubSchema(
+            thenS,
+            data,
+            currentPath,
+            accumulatedFailures,
+            rootSchema,
+          );
         }
       } else {
         if (elseSchema case final elseS?) {
-          elseS._validateSchema(
-              data, currentPath, accumulatedFailures, rootSchema);
+          _validateSubSchema(
+            elseS,
+            data,
+            currentPath,
+            accumulatedFailures,
+            rootSchema,
+          );
         }
       }
     }
 
     // 2. Schema Combiners: allOf, anyOf, oneOf, not
-    if (allOf case final allOfList?) {
+    if (allOf case final List allOfList?) {
       final initialFailureCount = accumulatedFailures.length;
       for (final subSchema in allOfList) {
-        subSchema._validateSchema(
-            data, currentPath, accumulatedFailures, rootSchema);
+        _validateSubSchema(
+          subSchema,
+          data,
+          currentPath,
+          accumulatedFailures,
+          rootSchema,
+        );
       }
       if (accumulatedFailures.length > initialFailureCount) {
         accumulatedFailures.add(
-            ValidationError(ValidationErrorType.allOfNotMet, path: currentPath));
+          ValidationError(ValidationErrorType.allOfNotMet, path: currentPath),
+        );
       }
     }
 
-    if (anyOf case final anyOfList?) {
+    if (anyOf case final List anyOfList?) {
       var passedCount = 0;
       for (final subSchema in anyOfList) {
         final tempFailures = _createHashSet();
-        subSchema._validateSchema(data, currentPath, tempFailures, rootSchema);
+        _validateSubSchema(
+            subSchema, data, currentPath, tempFailures, rootSchema);
         if (tempFailures.isEmpty) {
           passedCount++;
         }
       }
       if (passedCount == 0) {
         accumulatedFailures.add(
-            ValidationError(ValidationErrorType.anyOfNotMet, path: currentPath));
+          ValidationError(ValidationErrorType.anyOfNotMet, path: currentPath),
+        );
       }
     }
 
-    if (oneOf case final oneOfList?) {
+    if (oneOf case final List oneOfList?) {
       var passedCount = 0;
       for (final subSchema in oneOfList) {
         final tempFailures = _createHashSet();
-        subSchema._validateSchema(data, currentPath, tempFailures, rootSchema);
+        _validateSubSchema(
+            subSchema, data, currentPath, tempFailures, rootSchema);
         if (tempFailures.isEmpty) {
           passedCount++;
         }
       }
       if (passedCount != 1) {
-        accumulatedFailures.add(ValidationError(ValidationErrorType.oneOfNotMet,
+        accumulatedFailures.add(
+          ValidationError(
+            ValidationErrorType.oneOfNotMet,
             path: currentPath,
             details:
-                'Expected to match exactly one schema, but matched $passedCount'));
+                'Expected to match exactly one schema, but matched $passedCount',
+          ),
+        );
       }
     }
 
     if (not case final notSchema?) {
       final tempFailures = _createHashSet();
-      notSchema._validateSchema(data, currentPath, tempFailures, rootSchema);
+      _validateSubSchema(notSchema, data, currentPath, tempFailures, rootSchema);
       if (tempFailures.isEmpty) {
-        accumulatedFailures.add(ValidationError(
+        accumulatedFailures.add(
+          ValidationError(
             ValidationErrorType.notConditionViolated,
-            path: currentPath));
+            path: currentPath,
+          ),
+        );
       }
     }
 
     // 3. Generic Validation Keywords
     if (constValue case final constV?) {
-      if (!const DeepCollectionEquality().equals(data, constV)) {
-        accumulatedFailures.add(ValidationError(
+      if (!_deepEquals(data, constV)) {
+        accumulatedFailures.add(
+          ValidationError(
             ValidationErrorType.constMismatch,
             path: currentPath,
-            details: 'Value does not match const value $constV'));
+            details: 'Value does not match const value $constV',
+          ),
+        );
       }
     }
 
     if (enumValues case final enumV?) {
-      if (!enumV.any((e) => const DeepCollectionEquality().equals(data, e))) {
-        accumulatedFailures.add(ValidationError(
+      if (!enumV.any((e) => _deepEquals(data, e))) {
+        accumulatedFailures.add(
+          ValidationError(
             ValidationErrorType.enumValueNotAllowed,
             path: currentPath,
-            details: 'Value is not one of the allowed enum values'));
+            details: 'Value is not one of the allowed enum values',
+          ),
+        );
       }
     }
 
@@ -358,48 +525,65 @@ extension SchemaValidation on Schema {
     List<String> currentPath,
     HashSet<ValidationError> accumulatedFailures,
   ) {
-    final typeValue = type;
-    if (typeValue == null) return;
-
-    final types = switch (typeValue) {
-      String() => [JsonType.values.firstWhere((t) => t.typeName == typeValue)],
-      List() => typeValue
-          .map((t) => JsonType.values.firstWhere((e) => e.typeName == t))
-          .toList(),
-      _ => <JsonType>[],
-    };
-
     final actualType = _getJsonType(data);
-    if (types.isNotEmpty && !types.contains(actualType)) {
-      accumulatedFailures.add(ValidationError.typeMismatch(
-          path: currentPath,
-          expectedType: types.map((t) => t.typeName).join(' or '),
-          actualValue: data));
-      return; // If type doesn't match, no point in running type-specific validations
+
+    // First, validate against the `type` keyword if it exists.
+    final typeValue = type;
+    if (typeValue != null) {
+      final types = switch (typeValue) {
+        String() => [
+            JsonType.values.firstWhere((t) => t.typeName == typeValue)
+          ],
+        List() => typeValue
+            .map((t) => JsonType.values.firstWhere((e) => e.typeName == t))
+            .toList(),
+        _ => <JsonType>[],
+      };
+
+      if (types.isNotEmpty && !types.contains(actualType)) {
+        accumulatedFailures.add(
+          ValidationError.typeMismatch(
+            path: currentPath,
+            expectedType: types.map((t) => t.typeName).join(' or '),
+            actualValue: data,
+          ),
+        );
+        return; // If type doesn't match, no point in running other type-specific validations
+      }
     }
 
+    // Now, apply keywords based on the actual type of the data.
     switch (actualType) {
       case JsonType.object:
-        (this as ObjectSchema)
-            ._validateObject(data as Map<String, Object?>, currentPath, accumulatedFailures);
+        (this as ObjectSchema)._validateObject(
+          data as Map<String, Object?>,
+          currentPath,
+          accumulatedFailures,
+        );
         break;
       case JsonType.list:
-        (this as ListSchema)
-            ._validateList(data as List, currentPath, accumulatedFailures);
+        (this as ListSchema)._validateList(
+          data as List,
+          currentPath,
+          accumulatedFailures,
+        );
         break;
       case JsonType.string:
-        (this as StringSchema)
-            ._validateString(data as String, currentPath, accumulatedFailures);
+        (this as StringSchema)._validateString(
+          data as String,
+          currentPath,
+          accumulatedFailures,
+        );
         break;
       case JsonType.num:
-        (this as NumberSchema)
-            ._validateNumber(data as num, currentPath, accumulatedFailures);
-        break;
       case JsonType.int:
-        (this as IntegerSchema)
-            ._validateInteger(data as int, currentPath, accumulatedFailures);
+        (this as NumberSchema)._validateNumber(
+          data as num,
+          currentPath,
+          accumulatedFailures,
+        );
         break;
-      case JsonType.bool:
+      case JsonType.boolean:
       case JsonType.nil:
         // No specific keywords for bool or null besides generic ones.
         break;
@@ -411,11 +595,50 @@ extension SchemaValidation on Schema {
     if (data is List) return JsonType.list;
     if (data is String) return JsonType.string;
     if (data is int) return JsonType.int;
-    if (data is num) return JsonType.num; // Must come after `int`
-    if (data is bool) return JsonType.bool;
+    if (data is num) {
+      if (data is int || data.remainder(1) == 0) {
+        return JsonType.int;
+      }
+      return JsonType.num;
+    }
+    if (data is bool) return JsonType.boolean;
     if (data == null) return JsonType.nil;
     // This should not happen for valid JSON data.
     throw StateError('Unknown JSON type for value: $data');
+  }
+
+  Schema? _resolveRef(String ref, Schema rootSchema) {
+    if (!ref.startsWith('#/')) {
+      // For now, only support local refs.
+      return null;
+    }
+    final parts = ref.substring(2).split('/');
+    dynamic current = rootSchema;
+    for (final part in parts) {
+      final decodedPart = Uri.decodeComponent(
+        part.replaceAll('~1', '/').replaceAll('~0', '~'),
+      );
+      if (current is Schema && current._value.containsKey(decodedPart)) {
+        current = current._value[decodedPart];
+      } else if (current is Map && current.containsKey(decodedPart)) {
+        current = current[decodedPart];
+      } else if (current is List && int.tryParse(decodedPart) != null) {
+        final index = int.parse(decodedPart);
+        if (index < current.length) {
+          current = current[index];
+        } else {
+          return null;
+        }
+      } else {
+        return null;
+      }
+    }
+    if (current is Schema) {
+      return current;
+    } else if (current is Map) {
+      return Schema.fromMap(current as Map<String, Object?>);
+    }
+    return null;
   }
 }
 
@@ -456,18 +679,29 @@ extension type ObjectSchema.fromMap(Map<String, Object?> _value)
         if (maxProperties != null) 'maxProperties': maxProperties,
       });
 
-  Map<String, Schema>? get properties =>
-      (_value['properties'] as Map?)?.cast<String, Schema>();
+  Map<String, Schema>? get properties => _mapToSchema(kProperties);
   Map<String, Schema>? get patternProperties =>
-      (_value['patternProperties'] as Map?)?.cast<String, Schema>();
-  List<String>? get required => (_value['required'] as List?)?.cast<String>();
-  Map<String, List<String>>? get dependentRequired =>
-      (_value['dependentRequired'] as Map?)?.cast<String, List<String>>();
-  Object? get additionalProperties => _value['additionalProperties'];
-  Object? get unevaluatedProperties => _value['unevaluatedProperties'];
-  Schema? get propertyNames => _value['propertyNames'] as Schema?;
-  int? get minProperties => _value['minProperties'] as int?;
-  int? get maxProperties => _value['maxProperties'] as int?;
+      _mapToSchema(kPatternProperties);
+  List<String>? get required => (_value[kRequired] as List?)?.cast<String>();
+  Map<String, List<String>>? get dependentRequired {
+    final value = _value[kDependentRequired];
+    if (value is Map) {
+      return value.map(
+        (key, value) => MapEntry(
+          key as String,
+          (value as List).cast<String>(),
+        ),
+      );
+    }
+    return null;
+  }
+
+  Object? get additionalProperties => _schemaOrBool(kAdditionalProperties);
+  Object? get unevaluatedProperties =>
+      _schemaOrBool(kUnevaluatedProperties);
+  Schema? get propertyNames => _schemaOrBool(kPropertyNames);
+  int? get minProperties => (_value[kMinProperties] as num?)?.toInt();
+  int? get maxProperties => (_value[kMaxProperties] as num?)?.toInt();
 
   void _validateObject(
     Map<String, Object?> data,
@@ -475,27 +709,35 @@ extension type ObjectSchema.fromMap(Map<String, Object?> _value)
     HashSet<ValidationError> accumulatedFailures,
   ) {
     if (minProperties case final min? when data.keys.length < min) {
-      accumulatedFailures.add(ValidationError(
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.minPropertiesNotMet,
           path: currentPath,
           details:
-              'There should be at least $min properties. Only ${data.keys.length} were found'));
+              'There should be at least $min properties. Only ${data.keys.length} were found',
+        ),
+      );
     }
 
     if (maxProperties case final max? when data.keys.length > max) {
-      accumulatedFailures.add(ValidationError(
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.maxPropertiesExceeded,
           path: currentPath,
-          details:
-              'Exceeded maxProperties limit of $max (${data.keys.length})'));
+          details: 'Exceeded maxProperties limit of $max (${data.keys.length})',
+        ),
+      );
     }
 
     for (final reqProp in required ?? const []) {
       if (!data.containsKey(reqProp)) {
-        accumulatedFailures.add(ValidationError(
+        accumulatedFailures.add(
+          ValidationError(
             ValidationErrorType.requiredPropertyMissing,
             path: currentPath,
-            details: 'Required property "$reqProp" is missing'));
+            details: 'Required property "$reqProp" is missing',
+          ),
+        );
       }
     }
 
@@ -504,11 +746,14 @@ extension type ObjectSchema.fromMap(Map<String, Object?> _value)
         if (data.containsKey(entry.key)) {
           for (final requiredProp in entry.value) {
             if (!data.containsKey(requiredProp)) {
-              accumulatedFailures.add(ValidationError(
+              accumulatedFailures.add(
+                ValidationError(
                   ValidationErrorType.dependentRequiredMissing,
                   path: currentPath,
                   details:
-                      'Property "$requiredProp" is required because property "${entry.key}" is present.'));
+                      'Property "$requiredProp" is required because property "${entry.key}" is present.',
+                ),
+              );
             }
           }
         }
@@ -521,7 +766,12 @@ extension type ObjectSchema.fromMap(Map<String, Object?> _value)
         if (data.containsKey(entry.key)) {
           currentPath.add(entry.key);
           evaluatedKeys.add(entry.key);
-          entry.value._validateSchema(data[entry.key], currentPath, accumulatedFailures, this);
+          entry.value._validateSchema(
+            data[entry.key],
+            currentPath,
+            accumulatedFailures,
+            this,
+          );
           currentPath.removeLast();
         }
       }
@@ -534,7 +784,12 @@ extension type ObjectSchema.fromMap(Map<String, Object?> _value)
           if (pattern.hasMatch(dataKey)) {
             currentPath.add(dataKey);
             evaluatedKeys.add(dataKey);
-            entry.value._validateSchema(data[dataKey], currentPath, accumulatedFailures, this);
+            entry.value._validateSchema(
+              data[dataKey],
+              currentPath,
+              accumulatedFailures,
+              this,
+            );
             currentPath.removeLast();
           }
         }
@@ -543,7 +798,12 @@ extension type ObjectSchema.fromMap(Map<String, Object?> _value)
 
     if (propertyNames case final propNamesSchema?) {
       for (final key in data.keys) {
-        propNamesSchema._validateSchema(key, currentPath, accumulatedFailures, this);
+        propNamesSchema._validateSchema(
+          key,
+          currentPath,
+          accumulatedFailures,
+          this,
+        );
       }
     }
 
@@ -553,23 +813,32 @@ extension type ObjectSchema.fromMap(Map<String, Object?> _value)
       if (additionalProperties case final ap?) {
         currentPath.add(dataKey);
         if (ap is bool && !ap) {
-          accumulatedFailures.add(ValidationError(
+          accumulatedFailures.add(
+            ValidationError(
               ValidationErrorType.additionalPropertyNotAllowed,
               path: currentPath,
-              details: 'Additional property "$dataKey" is not allowed'));
+              details: 'Additional property "$dataKey" is not allowed',
+            ),
+          );
         } else if (ap is Schema) {
           (ap as Schema)._validateSchema(
-              data[dataKey], currentPath, accumulatedFailures, this);
+            data[dataKey],
+            currentPath,
+            accumulatedFailures,
+            this,
+          );
         }
         currentPath.removeLast();
-      } else if (unevaluatedProperties case final up?
-          when up is bool && !up) {
+      } else if (unevaluatedProperties case final up? when up is bool && !up) {
         // Only applies if additionalProperties is not defined
         currentPath.add(dataKey);
-        accumulatedFailures.add(ValidationError(
+        accumulatedFailures.add(
+          ValidationError(
             ValidationErrorType.unevaluatedPropertyNotAllowed,
             path: currentPath,
-            details: 'Unevaluated property "$dataKey" is not allowed'));
+            details: 'Unevaluated property "$dataKey" is not allowed',
+          ),
+        );
         currentPath.removeLast();
       }
     }
@@ -603,8 +872,8 @@ extension type const StringSchema.fromMap(Map<String, Object?> _value)
         if (format != null) 'format': format,
       });
 
-  int? get minLength => _value['minLength'] as int?;
-  int? get maxLength => _value['maxLength'] as int?;
+  int? get minLength => (_value[kMinLength] as num?)?.toInt();
+  int? get maxLength => (_value[kMaxLength] as num?)?.toInt();
   String? get pattern => _value['pattern'] as String?;
   String? get format => _value['format'] as String?;
 
@@ -613,31 +882,45 @@ extension type const StringSchema.fromMap(Map<String, Object?> _value)
     List<String> currentPath,
     HashSet<ValidationError> accumulatedFailures,
   ) {
-    if (minLength case final minLen? when data.length < minLen) {
-      accumulatedFailures.add(ValidationError(
+    if (minLength case final minLen?
+        when data.characters.length < minLen) {
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.minLengthNotMet,
           path: currentPath,
-          details: 'String "$data" is not at least $minLen characters long'));
+          details: 'String "$data" is not at least $minLen characters long',
+        ),
+      );
     }
-    if (maxLength case final maxLen? when data.length > maxLen) {
-      accumulatedFailures.add(ValidationError(
+    if (maxLength case final maxLen?
+        when data.characters.length > maxLen) {
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.maxLengthExceeded,
           path: currentPath,
-          details: 'String "$data" is more than $maxLen characters long'));
+          details: 'String "$data" is more than $maxLen characters long',
+        ),
+      );
     }
     if (pattern case final p? when !RegExp(p).hasMatch(data)) {
-      accumulatedFailures.add(ValidationError(
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.patternMismatch,
           path: currentPath,
-          details: 'String "$data" doesn\'t match the pattern "$p"'));
+          details: 'String "$data" doesn\'t match the pattern "$p"',
+        ),
+      );
     }
     if (format case final f?) {
       final regex = _getFormatRegex(f);
       if (regex != null && !regex.hasMatch(data)) {
-        accumulatedFailures.add(ValidationError(
+        accumulatedFailures.add(
+          ValidationError(
             ValidationErrorType.formatInvalid,
             path: currentPath,
-            details: 'String does not match format "$f"'));
+            details: 'String does not match format "$f"',
+          ),
+        );
       }
     }
   }
@@ -691,36 +974,51 @@ extension type NumberSchema.fromMap(Map<String, Object?> _value)
     HashSet<ValidationError> accumulatedFailures,
   ) {
     if (minimum case final min? when data < min) {
-      accumulatedFailures.add(ValidationError(
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.minimumNotMet,
           path: currentPath,
-          details: 'Value $data is not at least $min'));
+          details: 'Value $data is not at least $min',
+        ),
+      );
     }
     if (maximum case final max? when data > max) {
-      accumulatedFailures.add(ValidationError(
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.maximumExceeded,
           path: currentPath,
-          details: 'Value $data is larger than $max'));
+          details: 'Value $data is larger than $max',
+        ),
+      );
     }
     if (exclusiveMinimum case final exclusiveMin? when data <= exclusiveMin) {
-      accumulatedFailures.add(ValidationError(
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.exclusiveMinimumNotMet,
           path: currentPath,
-          details: 'Value $data is not greater than $exclusiveMin'));
+          details: 'Value $data is not greater than $exclusiveMin',
+        ),
+      );
     }
     if (exclusiveMaximum case final exclusiveMax? when data >= exclusiveMax) {
-      accumulatedFailures.add(ValidationError(
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.exclusiveMaximumExceeded,
           path: currentPath,
-          details: 'Value $data is not less than $exclusiveMax'));
+          details: 'Value $data is not less than $exclusiveMax',
+        ),
+      );
     }
     if (multipleOf case final multOf? when multOf != 0) {
       final remainder = data / multOf;
-      if ((remainder - remainder.round()).abs() > 1e-9) {
-        accumulatedFailures.add(ValidationError(
+      if ((remainder - remainder.truncate()).abs() > 1e-9) {
+        accumulatedFailures.add(
+          ValidationError(
             ValidationErrorType.multipleOfInvalid,
             path: currentPath,
-            details: 'Value $data is not a multiple of $multipleOf'));
+            details: 'Value $data is not a multiple of $multOf',
+          ),
+        );
       }
     }
   }
@@ -763,34 +1061,50 @@ extension type IntegerSchema.fromMap(Map<String, Object?> _value)
     HashSet<ValidationError> accumulatedFailures,
   ) {
     if (minimum case final min? when data < min) {
-      accumulatedFailures.add(ValidationError(
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.minimumNotMet,
           path: currentPath,
-          details: 'Value $data is less than the minimum of $min'));
+          details: 'Value $data is less than the minimum of $min',
+        ),
+      );
     }
     if (maximum case final max? when data > max) {
-      accumulatedFailures.add(ValidationError(
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.maximumExceeded,
           path: currentPath,
-          details: 'Value $data is more than the maximum of $max'));
+          details: 'Value $data is more than the maximum of $max',
+        ),
+      );
     }
     if (exclusiveMinimum case final exclusiveMin? when data <= exclusiveMin) {
-      accumulatedFailures.add(ValidationError(
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.exclusiveMinimumNotMet,
           path: currentPath,
-          details: 'Value $data is not greater than $exclusiveMin'));
+          details: 'Value $data is not greater than $exclusiveMin',
+        ),
+      );
     }
     if (exclusiveMaximum case final exclusiveMax? when data >= exclusiveMax) {
-      accumulatedFailures.add(ValidationError(
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.exclusiveMaximumExceeded,
           path: currentPath,
-          details: 'Value $data is not less than $exclusiveMax'));
+          details: 'Value $data is not less than $exclusiveMax',
+        ),
+      );
     }
-    if (multipleOf case final multOf? when multOf != 0 && (data % multOf != 0)) {
-      accumulatedFailures.add(ValidationError(
+    if (multipleOf case final multOf?
+        when multOf != 0 && (data % multOf != 0)) {
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.multipleOfInvalid,
           path: currentPath,
-          details: 'Value $data is not a multiple of $multOf'));
+          details: 'Value $data is not a multiple of $multOf',
+        ),
+      );
     }
   }
 }
@@ -800,7 +1114,7 @@ extension type BooleanSchema.fromMap(Map<String, Object?> _value)
     implements Schema {
   factory BooleanSchema({String? title, String? description}) =>
       BooleanSchema.fromMap({
-        'type': JsonType.bool.typeName,
+        'type': JsonType.boolean.typeName,
         if (title != null) 'title': title,
         if (description != null) 'description': description,
       });
@@ -850,16 +1164,16 @@ extension type ListSchema.fromMap(Map<String, Object?> _value)
         if (uniqueItems != null) 'uniqueItems': uniqueItems,
       });
 
-  Schema? get items => _value['items'] as Schema?;
+  Schema? get items => _schemaOrBool(kItems);
   List<Schema>? get prefixItems =>
-      (_value['prefixItems'] as List?)?.cast<Schema>();
-  Object? get unevaluatedItems => _value['unevaluatedItems'];
-  Schema? get contains => _value['contains'] as Schema?;
-  int? get minContains => _value['minContains'] as int?;
-  int? get maxContains => _value['maxContains'] as int?;
-  int? get minItems => _value['minItems'] as int?;
-  int? get maxItems => _value['maxItems'] as int?;
-  bool? get uniqueItems => _value['uniqueItems'] as bool?;
+      (_value[kPrefixItems] as List?)?.cast<Schema>();
+  Object? get unevaluatedItems => _schemaOrBool(kUnevaluatedItems);
+  Schema? get contains => _schemaOrBool(kContains);
+  int? get minContains => (_value[kMinContains] as num?)?.toInt();
+  int? get maxContains => (_value[kMaxContains] as num?)?.toInt();
+  int? get minItems => (_value[kMinItems] as num?)?.toInt();
+  int? get maxItems => (_value[kMaxItems] as num?)?.toInt();
+  bool? get uniqueItems => _value[kUniqueItems] as bool?;
 
   void _validateList(
     List data,
@@ -867,63 +1181,83 @@ extension type ListSchema.fromMap(Map<String, Object?> _value)
     HashSet<ValidationError> accumulatedFailures,
   ) {
     if (minItems case final min? when data.length < min) {
-      accumulatedFailures.add(ValidationError(
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.minItemsNotMet,
           path: currentPath,
-          details:
-              'List has ${data.length} items, but must have at least $min'));
+          details: 'List has ${data.length} items, but must have at least $min',
+        ),
+      );
     }
 
     if (maxItems case final max? when data.length > max) {
-      accumulatedFailures.add(ValidationError(
+      accumulatedFailures.add(
+        ValidationError(
           ValidationErrorType.maxItemsExceeded,
           path: currentPath,
           details:
-              'List has ${data.length} items, but must have less than $max'));
+              'List has ${data.length} items, but must have less than $max',
+        ),
+      );
     }
 
-    if (uniqueItems == true && data.toSet().length != data.length) {
-      final seenItems = <Object?>{};
-      final duplicates = <Object?>{};
+    if (uniqueItems == true) {
+      final seenItems = HashSet<Object?>(
+        equals: _deepEquals,
+        hashCode: _deepHashCode,
+      );
       for (final item in data) {
-        if (seenItems.contains(item)) {
-          duplicates.add(item);
-        } else {
-          seenItems.add(item);
+        if (!seenItems.add(item)) {
+          accumulatedFailures.add(
+            ValidationError(
+              ValidationErrorType.uniqueItemsViolated,
+              path: currentPath,
+              details: 'List contains duplicate items',
+            ),
+          );
+          break; // Found a duplicate, no need to check further.
         }
       }
-      accumulatedFailures.add(ValidationError(
-          ValidationErrorType.uniqueItemsViolated,
-          path: currentPath,
-          details: 'List contains duplicate items: ${duplicates.join(', ')}'));
     }
 
     if (contains case final containsSchema?) {
       final matches = data.where((item) {
         final tempFailures = _createHashSet();
-        containsSchema._validateSchema(item, currentPath, tempFailures, this);
+        _validateSubSchema(
+            containsSchema, item, currentPath, tempFailures, this);
         return tempFailures.isEmpty;
       }).length;
 
-      if (matches == 0) {
-        accumulatedFailures.add(ValidationError(
+      if (minContains == 0 && data.isEmpty) {
+        // This is a valid case.
+      } else if (matches == 0) {
+        accumulatedFailures.add(
+          ValidationError(
             ValidationErrorType.containsInvalid,
             path: currentPath,
-            details: 'Array does not contain a valid item'));
+            details: 'Array does not contain a valid item',
+          ),
+        );
       }
       if (minContains case final min? when matches < min) {
-        accumulatedFailures.add(ValidationError(
+        accumulatedFailures.add(
+          ValidationError(
             ValidationErrorType.minContainsNotMet,
             path: currentPath,
             details:
-                'Array must contain at least $min valid items, but found $matches'));
+                'Array must contain at least $min valid items, but found $matches',
+          ),
+        );
       }
       if (maxContains case final max? when matches > max) {
-        accumulatedFailures.add(ValidationError(
+        accumulatedFailures.add(
+          ValidationError(
             ValidationErrorType.maxContainsExceeded,
             path: currentPath,
             details:
-                'Array must contain at most $max valid items, but found $matches'));
+                'Array must contain at most $max valid items, but found $matches',
+          ),
+        );
       }
     }
 
@@ -932,7 +1266,13 @@ extension type ListSchema.fromMap(Map<String, Object?> _value)
       for (var i = 0; i < pItems.length && i < data.length; i++) {
         evaluatedItems[i] = true;
         currentPath.add(i.toString());
-        pItems[i]._validateSchema(data[i], currentPath, accumulatedFailures, this);
+        _validateSubSchema(
+          pItems[i],
+          data[i],
+          currentPath,
+          accumulatedFailures,
+          this,
+        );
         currentPath.removeLast();
       }
     }
@@ -941,7 +1281,13 @@ extension type ListSchema.fromMap(Map<String, Object?> _value)
       for (var i = startIndex; i < data.length; i++) {
         evaluatedItems[i] = true;
         currentPath.add(i.toString());
-        itemSchema._validateSchema(data[i], currentPath, accumulatedFailures, this);
+        _validateSubSchema(
+          itemSchema,
+          data[i],
+          currentPath,
+          accumulatedFailures,
+          this,
+        );
         currentPath.removeLast();
       }
     }
@@ -950,19 +1296,62 @@ extension type ListSchema.fromMap(Map<String, Object?> _value)
         if (!evaluatedItems[i]) {
           currentPath.add(i.toString());
           if (ui is bool && !ui) {
-            accumulatedFailures.add(ValidationError(
+            accumulatedFailures.add(
+              ValidationError(
                 ValidationErrorType.unevaluatedItemNotAllowed,
                 path: currentPath,
-                details: 'Unevaluated item in list at index $i'));
+                details: 'Unevaluated item in list at index $i',
+              ),
+            );
           } else if (ui is Schema) {
             (ui as Schema)._validateSchema(
-                data[i], currentPath, accumulatedFailures, this);
+              data[i],
+              currentPath,
+              accumulatedFailures,
+              this,
+            );
           }
           currentPath.removeLast();
         }
       }
     }
   }
+}
+
+bool _deepEquals(Object? a, Object? b) {
+  if (a is Map && b is Map) {
+    if (a.length != b.length) return false;
+    for (final key in a.keys) {
+      if (!b.containsKey(key) || !_deepEquals(a[key], b[key])) {
+        return false;
+      }
+    }
+    return true;
+  } else if (a is List && b is List) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!_deepEquals(a[i], b[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  return a == b;
+}
+
+int _deepHashCode(Object? o) {
+  if (o == null) return 0;
+  if (o is Map) {
+    // Order-independent hash for maps
+    if (o.isEmpty) return 0;
+    return o.entries
+        .map((e) => Object.hash(_deepHashCode(e.key), _deepHashCode(e.value)))
+        .fold(0, (value, element) => value ^ element);
+  }
+  if (o is List) {
+    return Object.hashAll(o.map(_deepHashCode));
+  }
+  return o.hashCode;
 }
 
 HashSet<ValidationError> _createHashSet() {
