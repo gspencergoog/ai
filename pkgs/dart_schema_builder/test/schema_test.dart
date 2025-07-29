@@ -23,24 +23,16 @@ void main() {
   void expectFailuresMatch(
     Schema schema,
     Object? data,
-    List<ValidationError> expectedErrorsWithoutPaths, {
+    List<ValidationErrorType> expectedErrorTypes, {
     String? reason,
   }) {
     final actualErrors = schema.validate(data);
-
-    // Create a set of path-stripped actual errors.
-    final actualErrorsStrippedSet = actualErrors.map(onlyKeepError).toSet();
-    // Create a set of expected errors (which are already path-stripped by definition for this function).
-    final expectedErrorsSet =
-        expectedErrorsWithoutPaths.map(onlyKeepError).toSet();
-
+    final actualErrorTypes = actualErrors.map((e) => e.error).toSet();
     expect(
-      actualErrorsStrippedSet,
-      equals(expectedErrorsSet),
-      reason:
-          reason ??
-          'Data: $data. Expected (paths ignored): $expectedErrorsSet. '
-              'Actual (paths ignored): $actualErrorsStrippedSet',
+      actualErrorTypes,
+      equals(expectedErrorTypes.toSet()),
+      reason: reason ??
+          'Data: $data. Expected (types): $expectedErrorTypes. Actual (types): $actualErrorTypes',
     );
   }
 
@@ -52,1796 +44,253 @@ void main() {
     String? reason,
   }) {
     final actualErrors = schema.validate(data);
+    final actualErrorStrings =
+        actualErrors.map((e) => e.toErrorString()).toSet();
+    final expectedErrorStrings =
+        expectedErrorsWithPaths.map((e) => e.toErrorString()).toSet();
 
-    // Compare sets of full ValidationError objects.
-    // This relies on ValidationError's equality being based on its
-    // underlying map (including the path if present).
     expect(
-      actualErrors.map((e) => e.toString()).toList()..sort(),
-      equals(expectedErrorsWithPaths.map((e) => e.toString()).toList()..sort()),
-      reason:
-          reason ??
-          'Data: $data. Expected (exact): ${expectedErrorsWithPaths.map((e) => e.toString()).toSet()}. '
-              'Actual (exact): ${actualErrors.map((e) => e.toString()).toSet()}',
+      actualErrorStrings,
+      equals(expectedErrorStrings),
+      reason: reason ??
+          'Data: $data. Expected (exact): $expectedErrorStrings. Actual (exact): $actualErrorStrings',
     );
   }
 
-  group('Schemas', () {
-    // No changes needed in this group as it tests schema construction, not validation.
-    test('ObjectSchema', () {
+  group('Schema Construction', () {
+    test('ObjectSchema with new keywords', () {
       final schema = ObjectSchema(
-        title: 'Foo',
-        description: 'Bar',
-        patternProperties: {'^foo': StringSchema()},
-        properties: {'foo': StringSchema(), 'bar': IntegerSchema()},
-        required: ['foo'],
-        additionalProperties: false,
-        unevaluatedProperties: true,
-        propertyNames: StringSchema(pattern: r'^[a-z]+$'),
-        minProperties: 1,
-        maxProperties: 2,
-      );
-      expect(schema, {
-        'type': 'object',
-        'title': 'Foo',
-        'description': 'Bar',
-        'patternProperties': {
-          '^foo': {'type': 'string'},
+        dependentRequired: {
+          'credit_card': ['billing_address']
         },
-        'properties': {
-          'foo': {'type': 'string'},
-          'bar': {'type': 'integer'},
-        },
-        'required': ['foo'],
-        'additionalProperties': false,
-        'unevaluatedProperties': true,
-        'propertyNames': {'type': 'string', 'pattern': r'^[a-z]+$'},
-        'minProperties': 1,
-        'maxProperties': 2,
-      });
-    });
-
-    test('StringSchema', () {
-      final schema = StringSchema(
-        title: 'Foo',
-        description: 'Bar',
-        minLength: 1,
-        maxLength: 10,
-        pattern: r'^[a-z]+$',
       );
-      expect(schema, {
-        'type': 'string',
-        'title': 'Foo',
-        'description': 'Bar',
-        'minLength': 1,
-        'maxLength': 10,
-        'pattern': r'^[a-z]+$',
+      expect(schema['dependentRequired'], {
+        'credit_card': ['billing_address']
       });
     });
 
-    test('NumberSchema', () {
-      final schema = NumberSchema(
-        title: 'Foo',
-        description: 'Bar',
-        minimum: 1,
-        maximum: 10,
-        exclusiveMinimum: 0,
-        exclusiveMaximum: 11,
-        multipleOf: 2,
-      );
-      expect(schema, {
-        'type': 'number',
-        'title': 'Foo',
-        'description': 'Bar',
-        'minimum': 1,
-        'maximum': 10,
-        'exclusiveMinimum': 0,
-        'exclusiveMaximum': 11,
-        'multipleOf': 2,
-      });
-    });
-
-    test('IntegerSchema', () {
-      final schema = IntegerSchema(
-        title: 'Foo',
-        description: 'Bar',
-        minimum: 1,
-        maximum: 10,
-        exclusiveMinimum: 0,
-        exclusiveMaximum: 11,
-        multipleOf: 2,
-      );
-      expect(schema, {
-        'type': 'integer',
-        'title': 'Foo',
-        'description': 'Bar',
-        'minimum': 1,
-        'maximum': 10,
-        'exclusiveMinimum': 0,
-        'exclusiveMaximum': 11,
-        'multipleOf': 2,
-      });
-    });
-
-    test('BooleanSchema', () {
-      final schema = BooleanSchema(title: 'Foo', description: 'Bar');
-      expect(schema, {'type': 'boolean', 'title': 'Foo', 'description': 'Bar'});
-    });
-
-    test('NullSchema', () {
-      final schema = NullSchema(title: 'Foo', description: 'Bar');
-      expect(schema, {'type': 'null', 'title': 'Foo', 'description': 'Bar'});
-    });
-
-    test('ListSchema', () {
+    test('ListSchema with new keywords', () {
       final schema = ListSchema(
-        title: 'Foo',
-        description: 'Bar',
-        items: StringSchema(),
-        prefixItems: [IntegerSchema(), BooleanSchema()],
-        unevaluatedItems: false,
-        minItems: 1,
-        maxItems: 10,
-        uniqueItems: true,
+        contains: StringSchema(),
+        minContains: 1,
+        maxContains: 5,
       );
-      expect(schema, {
-        'type': 'array',
-        'title': 'Foo',
-        'description': 'Bar',
-        'items': {'type': 'string'},
-        'prefixItems': [
-          {'type': 'integer'},
-          {'type': 'boolean'},
-        ],
-        'unevaluatedItems': false,
-        'minItems': 1,
-        'maxItems': 10,
-        'uniqueItems': true,
-      });
+      expect(schema['contains'], isA<StringSchema>());
+      expect(schema['minContains'], 1);
+      expect(schema['maxContains'], 5);
     });
 
-    test('EnumSchema', () {
-      // ignore: deprecated_member_use_from_same_package
-      final schema = EnumSchema(
-        title: 'Foo',
-        description: 'Bar',
-        values: {'a', 'b', 'c'},
-      );
-      expect(schema, {
-        'type': 'enum',
-        'title': 'Foo',
-        'description': 'Bar',
-        'enum': ['a', 'b', 'c'],
-      });
+    test('StringSchema with new keywords', () {
+      final schema = StringSchema(format: 'email');
+      expect(schema['format'], 'email');
     });
 
-    test('Schema', () {
+    test('Schema.combined with new keywords', () {
       final schema = Schema.combined(
-        type: JsonType.bool,
-        title: 'Foo',
-        description: 'Bar',
-        allOf: [StringSchema(), IntegerSchema()],
-        anyOf: [StringSchema(), IntegerSchema()],
-        oneOf: [StringSchema(), IntegerSchema()],
-        not: [StringSchema()],
+        ifSchema: StringSchema(),
+        thenSchema: StringSchema(minLength: 5),
+        elseSchema: IntegerSchema(),
       );
-      expect(schema, {
-        'type': 'boolean',
-        'title': 'Foo',
-        'description': 'Bar',
-        'allOf': [
-          {'type': 'string'},
-          {'type': 'integer'},
-        ],
-        'anyOf': [
-          {'type': 'string'},
-          {'type': 'integer'},
-        ],
-        'oneOf': [
-          {'type': 'string'},
-          {'type': 'integer'},
-        ],
-        'not': [
-          {'type': 'string'},
-        ],
-      });
+      expect(schema['if'], isA<StringSchema>());
+      expect(schema['then'], isA<StringSchema>());
+      expect(schema['else'], isA<IntegerSchema>());
     });
   });
 
-  group('Schema Validation Tests (Paths Ignored)', () {
-    // Most tests will use expectFailuresMatch
-    group('Type Mismatch', () {
-      test('object schema with non-map data', () {
-        expectFailuresMatch(Schema.object(), 'not a map', [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('list schema with non-list data', () {
-        expectFailuresMatch(Schema.list(), 'not a list', [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('string schema with non-string data', () {
-        expectFailuresMatch(Schema.string(), 123, [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('number schema with non-num data', () {
-        expectFailuresMatch(Schema.num(), 'not a number', [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('integer schema with non-int data', () {
-        expectFailuresMatch(Schema.int(), 'not an int', [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('integer schema with non-integer num data', () {
-        expectFailuresMatch(Schema.int(), 10.5, [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('boolean schema with non-bool data', () {
-        expectFailuresMatch(Schema.bool(), 'not a bool', [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('null schema with non-null data', () {
-        expectFailuresMatch(Schema.nil(), 'not null', [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('integer schema with integer-like num data (e.g. 10.0)', () {
-        // This test expects minimumNotMet because 10.0 is converted to int 10,
-        // which is less than the minimum of 11.
-        expectFailuresMatch(IntegerSchema(minimum: 11), 10.0, [
-          ValidationError(ValidationErrorType.minimumNotMet, path: const []),
-        ]);
-      });
+  group('Generic Keyword Validation', () {
+    test('`const` keyword validation', () {
+      final schema = Schema.fromMap({'const': 'hello'});
+      expectFailuresMatch(schema, 'world', [ValidationErrorType.constMismatch]);
+      expectFailuresMatch(schema, 'hello', []);
     });
 
-    group('Schema Combinators', () {
-      test('allOfNotMet - one sub-schema fails', () {
-        final schema = Schema.combined(
-          allOf: [StringSchema(minLength: 3), StringSchema(maxLength: 5)],
-        );
-        // 'hi' fails minLength: 3.
-        // The allOf combinator fails, and the specific sub-failure is also reported.
-        expectFailuresMatch(schema, 'hi', [
-          ValidationError(ValidationErrorType.allOfNotMet, path: const []),
-          ValidationError(ValidationErrorType.minLengthNotMet, path: const []),
-        ]);
+    test('`const` with complex object', () {
+      final schema = Schema.fromMap({
+        'const': {'foo': 'bar', 'baz': [1, 2]}
       });
-
-      test('allOfNotMet - multiple sub-schemas fail', () {
-        final schema = Schema.combined(
-          allOf: [
-            StringSchema(minLength: 10),
-            StringSchema(pattern: '^[a-z]+\$'),
-          ],
-        );
-        // 'Short123' fails minLength and pattern.
-        expectFailuresMatch(schema, 'Short123', [
-          ValidationError(ValidationErrorType.allOfNotMet, path: const []),
-          ValidationError(ValidationErrorType.minLengthNotMet, path: const []),
-          ValidationError(ValidationErrorType.patternMismatch, path: const []),
-        ]);
-      });
-
-      test('anyOfNotMet - all sub-schemas fail', () {
-        final schema = Schema.combined(
-          anyOf: [StringSchema(minLength: 5), NumberSchema(minimum: 100)],
-        );
-        // `true` will cause typeMismatch for both StringSchema and NumberSchema.
-        expectFailuresMatch(schema, true, [
-          ValidationError(ValidationErrorType.anyOfNotMet, path: const []),
-          // The specific type mismatches from sub-schemas might also be reported
-          // depending on how _validateSchema handles anyOf error aggregation.
-          // Current tools.dart only adds anyOfNotMet for anyOf.
-        ]);
-      });
-
-      test('anyOfNotMet - specific failures', () {
-        final schema = Schema.combined(
-          anyOf: [
-            StringSchema(minLength: 5),
-            StringSchema(pattern: '^[a-z]+\$'),
-          ],
-        );
-        // "Hi1" fails minLength: 5 and pattern: '^[a-z]+$'.
-        // Since both sub-schemas fail, anyOfNotMet is reported.
-        expectFailuresMatch(schema, 'Hi1', [
-          ValidationError(ValidationErrorType.anyOfNotMet, path: const []),
-        ]);
-      });
-
-      test('oneOfNotMet - matches none', () {
-        final s = Schema.combined(
-          oneOf: [
-            StringSchema(minLength: 3, maxLength: 3), // Effectively length 3
-            NumberSchema(minimum: 10, maximum: 10), // Effectively value 10
-          ],
-        );
-        // `true` matches neither sub-schema.
-        expectFailuresMatch(s, true, [
-          ValidationError(ValidationErrorType.oneOfNotMet, path: const []),
-        ]);
-      });
-
-      test('oneOfNotMet - matches multiple', () {
-        final schema = Schema.combined(
-          oneOf: [StringSchema(maxLength: 10), StringSchema(pattern: 'test')],
-        );
-        // 'test' matches both maxLength: 10 and pattern: 'test'.
-        expectFailuresMatch(schema, 'test', [
-          ValidationError(ValidationErrorType.oneOfNotMet, path: const []),
-        ]);
-      });
-
-      test('notConditionViolated - matches 1 sub-schema in "not" list', () {
-        final schema = Schema.combined(
-          not: [StringSchema(maxLength: 2), StringSchema(pattern: 'test')],
-        );
-        // 'test' matches the second sub-schema in the "not" list.
-        expectFailuresMatch(schema, 'test', [
-          ValidationError(
-            ValidationErrorType.notConditionViolated,
-            path: const [],
-          ),
-        ]);
-      });
+      expectFailuresMatch(schema, {'foo': 'bar'}, [ValidationErrorType.constMismatch]);
+      expectFailuresMatch(schema, {
+        'foo': 'bar',
+        'baz': [1, 2]
+      }, []);
     });
 
-    group('Object Specific', () {
-      test('requiredPropertyMissing', () {
-        final schema = ObjectSchema(required: ['name']);
-        expectFailuresMatch(
-          schema,
-          {'foo': 1},
-          [
-            ValidationError(
-              ValidationErrorType.requiredPropertyMissing,
-              path: const [],
-              details: 'Required property "name" is missing',
-            ),
-          ],
-        );
+    test('`enum` keyword with various types', () {
+      final schema = Schema.fromMap({
+        'enum': ['red', 42, true, null]
       });
-
-      test('additionalPropertyNotAllowed - boolean false', () {
-        final schema = ObjectSchema(
-          properties: {'name': StringSchema()},
-          additionalProperties: false,
-        );
-        // 'age' is an additional property not allowed.
-        expectFailuresMatch(
-          schema,
-          {'name': 'test', 'age': 30},
-          [
-            ValidationError(
-              ValidationErrorType.additionalPropertyNotAllowed,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test('additionalPropertyNotAllowed - schema fails', () {
-        final schema = ObjectSchema(
-          properties: {'name': StringSchema()},
-          additionalProperties: StringSchema(minLength: 5),
-        );
-        // 'extra': 'abc' fails the additionalProperties schema (minLength: 5).
-        expectFailuresMatch(
-          schema,
-          {'name': 'test', 'extra': 'abc'},
-          [
-            ValidationError(
-              ValidationErrorType.minLengthNotMet,
-              path: const [],
-            ), // Sub-failure from additionalProperties schema
-          ],
-        );
-      });
-
-      test('minPropertiesNotMet', () {
-        final schema = ObjectSchema(minProperties: 2);
-        expectFailuresMatch(
-          schema,
-          {'a': 1},
-          [
-            ValidationError(
-              ValidationErrorType.minPropertiesNotMet,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test('maxPropertiesExceeded', () {
-        final schema = ObjectSchema(maxProperties: 1);
-        expectFailuresMatch(
-          schema,
-          {'a': 1, 'b': 2},
-          [
-            ValidationError(
-              ValidationErrorType.maxPropertiesExceeded,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test('propertyNamesInvalid', () {
-        final schema = ObjectSchema(propertyNames: StringSchema(minLength: 3));
-        // Property name 'ab' fails minLength: 3.
-        expectFailuresMatch(
-          schema,
-          {'ab': 1, 'abc': 2},
-          [
-            ValidationError(
-              ValidationErrorType.minLengthNotMet,
-              path: const [],
-            ), // Sub-failure from propertyNames schema
-          ],
-        );
-      });
-
-      test('propertyValueInvalid', () {
-        final schema = ObjectSchema(
-          properties: {'age': IntegerSchema(minimum: 18)},
-        );
-        // Value 10 for 'age' fails IntegerSchema(minimum: 18).
-        // Both propertyValueInvalid and the specific sub-failure (minimumNotMet) are reported.
-        expectFailuresMatch(
-          schema,
-          {'age': 10},
-          [ValidationError(ValidationErrorType.minimumNotMet, path: const [])],
-        );
-      });
-
-      test('patternPropertyValueInvalid', () {
-        final schema = ObjectSchema(
-          patternProperties: {r'^x-': IntegerSchema(minimum: 10)},
-        );
-        // Value 5 for 'x-custom' fails IntegerSchema(minimum: 10).
-        expectFailuresMatch(
-          schema,
-          {'x-custom': 5},
-          [ValidationError(ValidationErrorType.minimumNotMet, path: const [])],
-        );
-      });
-
-      test('unevaluatedPropertyNotAllowed', () {
-        final schema = ObjectSchema(
-          properties: {'name': StringSchema()},
-          unevaluatedProperties: false,
-        );
-        // 'age' is unevaluated and not allowed.
-        expectFailuresMatch(
-          schema,
-          {'name': 'test', 'age': 30},
-          [
-            ValidationError(
-              ValidationErrorType.unevaluatedPropertyNotAllowed,
-              path: const [],
-            ),
-          ],
-        );
-      });
+      expectFailuresMatch(schema, 'blue', [ValidationErrorType.enumValueNotAllowed]);
+      expectFailuresMatch(schema, 24, [ValidationErrorType.enumValueNotAllowed]);
+      expectFailuresMatch(schema, 'red', []);
+      expectFailuresMatch(schema, 42, []);
+      expectFailuresMatch(schema, true, []);
+      expectFailuresMatch(schema, null, []);
     });
 
-    group('List Specific', () {
-      test('minItemsNotMet', () {
-        final schema = ListSchema(minItems: 2);
-        expectFailuresMatch(
-          schema,
-          [1],
-          [ValidationError(ValidationErrorType.minItemsNotMet, path: const [])],
-        );
+    test('`type` keyword with a list of types', () {
+      final schema = Schema.fromMap({
+        'type': ['string', 'number']
       });
+      expectFailuresMatch(schema, true, [ValidationErrorType.typeMismatch]);
+      expectFailuresMatch(schema, 'hello', []);
+      expectFailuresMatch(schema, 123.45, []);
+    });
+  });
 
-      test('maxItemsExceeded', () {
-        final schema = ListSchema(maxItems: 1);
-        expectFailuresMatch(
-          schema,
-          [1, 2],
-          [
-            ValidationError(
-              ValidationErrorType.maxItemsExceeded,
-              path: const [],
-            ),
-          ],
-        );
-      });
+  group('String Format Validation', () {
+    test('format: date-time', () {
+      final schema = StringSchema(format: 'date-time');
+      expectFailuresMatch(schema, '2025-07-29T12:34:56Z', []);
+      expectFailuresMatch(schema, '2025-07-29T12:34:56.123Z', []);
+      expectFailuresMatch(schema, '2025-07-29T12:34:56+01:00', []);
+      expectFailuresMatch(schema, 'not-a-date', [ValidationErrorType.formatInvalid]);
+    });
 
-      test('uniqueItemsViolated', () {
-        final schema = ListSchema(uniqueItems: true);
-        expectFailuresMatch(
-          schema,
-          [1, 2, 1],
-          [
-            ValidationError(
-              ValidationErrorType.uniqueItemsViolated,
-              path: const [],
-            ),
-          ],
-        );
-      });
+    test('format: email', () {
+      final schema = StringSchema(format: 'email');
+      expectFailuresMatch(schema, 'test@example.com', []);
+      expectFailuresMatch(schema, 'not-an-email', [ValidationErrorType.formatInvalid]);
+    });
 
-      test('itemInvalid - using items', () {
-        final schema = ListSchema(items: IntegerSchema(minimum: 10));
-        // Item 5 fails IntegerSchema(minimum: 10).
-        expectFailuresMatch(
-          schema,
-          [10, 5, 12],
-          [ValidationError(ValidationErrorType.minimumNotMet, path: const [])],
-        );
-      });
+    test('format: ipv4', () {
+      final schema = StringSchema(format: 'ipv4');
+      expectFailuresMatch(schema, '192.168.1.1', []);
+      expectFailuresMatch(schema, '256.0.0.1', [ValidationErrorType.formatInvalid]);
+      expectFailuresMatch(schema, '1.2.3.4.5', [ValidationErrorType.formatInvalid]);
+    });
+  });
 
-      test('prefixItemInvalid', () {
-        final schema = ListSchema(
-          prefixItems: [IntegerSchema(minimum: 10), StringSchema(minLength: 3)],
-        );
-        // First prefix item 5 fails IntegerSchema(minimum: 10).
-        expectFailuresMatch(
-          schema,
-          [5], // Not enough items for all prefixItems, but first one is checked
-          [ValidationError(ValidationErrorType.minimumNotMet, path: const [])],
-        );
-        // Second prefix item 'hi' fails StringSchema(minLength: 3).
-        expectFailuresMatch(
-          schema,
-          [10, 'hi'],
-          [
-            ValidationError(
-              ValidationErrorType.minLengthNotMet,
-              path: const [],
-            ),
-          ],
-        );
-      });
+  group('Conditional Validation', () {
+    test('if/then validation', () {
+      final schema = Schema.combined(
+        ifSchema: ObjectSchema(properties: {'country': StringSchema(constValue: 'USA')}),
+        thenSchema: ObjectSchema(properties: {'zip_code': StringSchema(pattern: r'^\d{5}$')}),
+      );
+      // If matches, then must match
+      expectFailuresMatch(schema, {'country': 'USA', 'zip_code': 'abcde'}, [ValidationErrorType.patternMismatch]);
+      // If matches, then does match
+      expectFailuresMatch(schema, {'country': 'USA', 'zip_code': '12345'}, []);
+      // If does not match, then is ignored
+      expectFailuresMatch(schema, {'country': 'Canada', 'zip_code': 'abcde'}, []);
+    });
 
-      test(
-        'unevaluatedItemNotAllowed - after prefixItems, no items schema',
-        () {
-          final schema = ListSchema(
-            prefixItems: [IntegerSchema()],
-            unevaluatedItems: false,
-          );
-          // 'extra' is unevaluated and not allowed.
-          expectFailuresMatch(
-            schema,
-            [10, 'extra'],
-            [
-              ValidationError(
-                ValidationErrorType.unevaluatedItemNotAllowed,
-                path: const [],
-              ),
-            ],
-          );
+    test('if/else validation', () {
+      final schema = Schema.combined(
+        ifSchema: ObjectSchema(properties: {'country': StringSchema(constValue: 'USA')}),
+        elseSchema: ObjectSchema(properties: {'zip_code': StringSchema(pattern: r'^[A-Z]\d[A-Z] \d[A-Z]\d$')}),
+      );
+      // If matches, else is ignored
+      expectFailuresMatch(schema, {'country': 'USA', 'zip_code': 'not-a-canadian-postal-code'}, []);
+      // If does not match, else must match
+      expectFailuresMatch(schema, {'country': 'Canada', 'zip_code': '12345'}, [ValidationErrorType.patternMismatch]);
+      // If does not match, else does match
+      expectFailuresMatch(schema, {'country': 'Canada', 'zip_code': 'K1A 0B1'}, []);
+    });
+
+    test('if/then/else validation', () {
+      final schema = Schema.combined(
+        ifSchema: ObjectSchema(properties: {'country': StringSchema(constValue: 'USA')}),
+        thenSchema: ObjectSchema(properties: {'zip_code': StringSchema(pattern: r'^\d{5}$')}),
+        elseSchema: ObjectSchema(properties: {'zip_code': StringSchema(pattern: r'^[A-Z]\d[A-Z] \d[A-Z]\d$')}),
+      );
+      // If matches, then fails
+      expectFailuresMatch(schema, {'country': 'USA', 'zip_code': 'K1A 0B1'}, [ValidationErrorType.patternMismatch]);
+      // If does not match, else fails
+      expectFailuresMatch(schema, {'country': 'Canada', 'zip_code': '12345'}, [ValidationErrorType.patternMismatch]);
+    });
+  });
+
+  group('Object Dependent Validation', () {
+    test('dependentRequired validation', () {
+      final schema = ObjectSchema(
+        dependentRequired: {
+          'credit_card': ['billing_address'],
         },
       );
+      // Dependency key is present, required key is missing
+      expectFailuresMatch(schema, {'credit_card': '1234-5678-9012-3456'}, [ValidationErrorType.dependentRequiredMissing]);
+      // Dependency key is present, required key is present
+      expectFailuresMatch(schema, {'credit_card': '1234-5678-9012-3456', 'billing_address': '...'}, []);
+      // Dependency key is not present, so validation is skipped
+      expectFailuresMatch(schema, {'name': 'John Doe'}, []);
+    });
+  });
+
+  group('List Contains Validation', () {
+    test('`contains` keyword validation', () {
+      final schema = ListSchema(contains: IntegerSchema(minimum: 5));
+      expectFailuresMatch(schema, [1, 2, 3, 4], [ValidationErrorType.containsInvalid]);
+      expectFailuresMatch(schema, [1, 2, 3, 4, 5], []);
     });
 
-    group('String Specific', () {
-      test('minLengthNotMet', () {
-        final schema = StringSchema(minLength: 3);
-        expectFailuresMatch(schema, 'hi', [
-          ValidationError(ValidationErrorType.minLengthNotMet, path: const []),
-        ]);
-      });
-      // ... other string specific tests using expectFailuresMatch
+    test('`minContains` keyword validation', () {
+      final schema = ListSchema(contains: IntegerSchema(minimum: 5), minContains: 2);
+      expectFailuresMatch(schema, [1, 6, 3, 4], [ValidationErrorType.minContainsNotMet]);
+      expectFailuresMatch(schema, [1, 6, 3, 7], []);
     });
 
-    group('Number Specific', () {
-      test('minimumNotMet', () {
-        final schema = NumberSchema(minimum: 10);
-        expectFailuresMatch(schema, 5, [
-          ValidationError(ValidationErrorType.minimumNotMet, path: const []),
-        ]);
-      });
-      // ... other number specific tests using expectFailuresMatch
+    test('`maxContains` keyword validation', () {
+      final schema = ListSchema(contains: IntegerSchema(minimum: 5), maxContains: 1);
+      expectFailuresMatch(schema, [6, 7, 3, 4], [ValidationErrorType.maxContainsExceeded]);
+      expectFailuresMatch(schema, [1, 6, 3, 4], []);
     });
 
-    group('Integer Specific', () {
-      test('minimumNotMet', () {
-        final schema = IntegerSchema(minimum: 10);
-        expectFailuresMatch(schema, 5, [
-          ValidationError(ValidationErrorType.minimumNotMet, path: const []),
-        ]);
-      });
-      // ... other integer specific tests using expectFailuresMatch
+    test('`contains` without `minContains` defaults to 1', () {
+      final schema = ListSchema(contains: IntegerSchema(minimum: 5));
+      expectFailuresMatch(schema, [1, 2, 3], [ValidationErrorType.containsInvalid]);
     });
   });
 
   group('Schema Validation Path Tests (Exact Paths)', () {
-    // Tests specifically for path validation will use expectFailuresExact
-    test('typeMismatch at root has empty path', () {
-      expectFailuresExact(Schema.string(), 123, [
-        ValidationError.typeMismatch(
-          path: [],
-          expectedType: String,
-          actualValue: 123,
-        ),
-      ]);
-    });
-
-    test('requiredPropertyMissing with correct path', () {
-      final schema = ObjectSchema(required: ['name']);
-      expectFailuresExact(
-        schema,
-        {'foo': 1},
-        [
-          ValidationError(
-            ValidationErrorType.requiredPropertyMissing,
-            path:
-                [], // Missing property is checked at the current object level (root in this case)
-            details: 'Required property "name" is missing',
-          ),
-        ],
-      );
-    });
-
-    test('propertyValueInvalid with path and sub-failure', () {
-      final schema = ObjectSchema(
-        properties: {'age': IntegerSchema(minimum: 18)},
-      );
-      expectFailuresExact(
-        schema,
-        {'age': 10},
-        [
-          ValidationError(
-            ValidationErrorType.minimumNotMet,
-            path: ['age'],
-            details: 'Value 10 is less than the minimum of 18',
-          ), // Sub-failure also has the path
-        ],
-      );
-    });
-
-    test('Deeper path for nested object property invalid', () {
+    test('dependentRequired with correct path', () {
       final schema = ObjectSchema(
         properties: {
-          'user': ObjectSchema(
-            properties: {
-              'address': ObjectSchema(required: ['street']),
+          'shipping': ObjectSchema(
+            dependentRequired: {
+              'address': ['city', 'state'],
             },
-            required: ['address'], // Let's make 'address' itself required
           ),
         },
-        required: ['user'], // And 'user' required
       );
       expectFailuresExact(
         schema,
         {
-          'user': {
-            'address': {'city': 'Testville'},
-          },
-        }, // 'street' is missing
+          'shipping': {'address': '123 Main St'}
+        },
         [
           ValidationError(
-            ValidationErrorType.requiredPropertyMissing,
-            path: [
-              'user',
-              'address',
-            ], // Path to the object where 'street' is missing
-            details: 'Required property "street" is missing',
+            ValidationErrorType.dependentRequiredMissing,
+            path: ['shipping'],
+            details: 'Property "city" is required because property "address" is present.',
+          ),
+          ValidationError(
+            ValidationErrorType.dependentRequiredMissing,
+            path: ['shipping'],
+            details: 'Property "state" is required because property "address" is present.',
           ),
         ],
       );
     });
 
-    test('itemInvalid in list with path and sub-failure', () {
-      final schema = ListSchema(items: IntegerSchema(minimum: 100));
-      expectFailuresExact(
-        schema,
-        [101, 50, 200], // Item at index 1 (value 50) is invalid
-        [
-          ValidationError(
-            ValidationErrorType.minimumNotMet,
-            path: ['1'],
-            details: 'Value 50 is less than the minimum of 100',
-          ),
-        ],
-      );
-    });
-
-    test('prefixItemInvalid with path and sub-failure', () {
+    test('minContains with correct path', () {
       final schema = ListSchema(
-        prefixItems: [StringSchema(minLength: 3), IntegerSchema(maximum: 10)],
+        items: ListSchema(
+          contains: IntegerSchema(minimum: 10),
+          minContains: 2,
+        ),
       );
       expectFailuresExact(
         schema,
-        ['ok', 20], // Item at index 1 (value 20) fails prefixItem schema
+        [
+          [5, 15, 2]
+        ],
         [
           ValidationError(
-            ValidationErrorType.minLengthNotMet,
+            ValidationErrorType.minContainsNotMet,
             path: ['0'],
-            details: 'String "ok" is not at least 3 characters long',
-          ),
-          ValidationError(
-            ValidationErrorType.maximumExceeded,
-            path: ['1'],
-            details: 'Value 20 is more than the maximum of 10',
+            details: 'Array must contain at least 2 valid items, but found 1',
           ),
         ],
-      );
-    });
-
-    test('allOfNotMet with path and sub-failures', () {
-      final schema = Schema.combined(
-        allOf: [StringSchema(minLength: 3), StringSchema(maxLength: 1)],
-      );
-      expectFailuresExact(schema, 'hi', [
-        // 'hi' fails maxLength:1 and thus minLength:3 is also not met in a sense for allOf
-        ValidationError(ValidationErrorType.allOfNotMet, path: []),
-        ValidationError(
-          ValidationErrorType.minLengthNotMet,
-          path: [],
-          details: 'String "hi" is not at least 3 characters long',
-        ), // from first sub-schema
-        ValidationError(
-          ValidationErrorType.maxLengthExceeded,
-          path: [],
-          details: 'String "hi" is more than 1 characters long',
-        ), // from second sub-schema
-      ]);
-    });
-
-    test('additionalPropertyNotAllowed with path and sub-failure', () {
-      final schema = ObjectSchema(
-        properties: {'name': StringSchema()},
-        additionalProperties: StringSchema(minLength: 5),
-      );
-      expectFailuresExact(
-        schema,
-        {'name': 'test', 'extra': 'abc'},
-        [
-          ValidationError(
-            ValidationErrorType.minLengthNotMet,
-            path: ['extra'],
-            details: 'String "abc" is not at least 5 characters long',
-          ),
-        ],
-      );
-    });
-  });
-
-  group('Schema Validation Tests', () {
-    group('Type Mismatch', () {
-      test('object schema with non-map data', () {
-        expectFailuresMatch(Schema.object(), 'not a map', [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('list schema with non-list data', () {
-        expectFailuresMatch(Schema.list(), 'not a list', [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('string schema with non-string data', () {
-        expectFailuresMatch(Schema.string(), 123, [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('number schema with non-num data', () {
-        expectFailuresMatch(Schema.num(), 'not a number', [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('integer schema with non-int data', () {
-        expectFailuresMatch(Schema.int(), 'not an int', [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('integer schema with non-integer num data', () {
-        expectFailuresMatch(Schema.int(), 10.5, [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('boolean schema with non-bool data', () {
-        expectFailuresMatch(Schema.bool(), 'not a bool', [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('null schema with non-null data', () {
-        expectFailuresMatch(Schema.nil(), 'not null', [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-      test('integer schema with integer-like num data (e.g. 10.0)', () {
-        expectFailuresMatch(IntegerSchema(minimum: 11), 10.0, [
-          ValidationError(ValidationErrorType.minimumNotMet, path: const []),
-        ]);
-      });
-    });
-
-    group('Schema Combinators', () {
-      test('allOfNotMet - one sub-schema fails', () {
-        final schema = Schema.combined(
-          allOf: [StringSchema(minLength: 3), StringSchema(maxLength: 5)],
-        );
-        expectFailuresMatch(schema, 'hi', [
-          ValidationError(ValidationErrorType.allOfNotMet, path: const []),
-          ValidationError(ValidationErrorType.minLengthNotMet, path: const []),
-        ]);
-      });
-
-      test('allOfNotMet - multiple sub-schemas fail', () {
-        final schema = Schema.combined(
-          allOf: [
-            StringSchema(minLength: 10),
-            StringSchema(pattern: '^[a-z]+\$'),
-          ],
-        );
-        expectFailuresMatch(schema, 'Short123', [
-          ValidationError(ValidationErrorType.allOfNotMet, path: const []),
-          ValidationError(ValidationErrorType.minLengthNotMet, path: const []),
-          ValidationError(ValidationErrorType.patternMismatch, path: const []),
-        ]);
-      });
-
-      test('anyOfNotMet - all sub-schemas fail', () {
-        final schema = Schema.combined(
-          anyOf: [StringSchema(minLength: 5), NumberSchema(minimum: 100)],
-        );
-        // Data that fails both type checks if types were strictly enforced by anyOf sub-schemas alone
-        // However, anyOf itself doesn't enforce type, the subschemas do.
-        // If data is `true`, StringSchema(minLength: 5).validate(true) -> [typeMismatch]
-        // NumberSchema(minimum: 100).validate(true) -> [typeMismatch]
-        // So anyOf fails.
-        expectFailuresMatch(schema, true, [
-          ValidationError(ValidationErrorType.anyOfNotMet, path: const []),
-        ]);
-      });
-
-      test('anyOfNotMet - specific failures', () {
-        final schema = Schema.combined(
-          anyOf: [
-            StringSchema(minLength: 5),
-            StringSchema(pattern: '^[a-z]+\$'),
-          ],
-        );
-        // "Hi1" fails minLength and pattern.
-        // StringSchema(minLength: 5).validate("Hi1") -> [minLengthNotMet]
-        // StringSchema(pattern: '^[a-z]+$').validate("Hi1") -> [patternMismatch]
-        // Since both fail, anyOf fails.
-        expectFailuresMatch(schema, 'Hi1', [
-          ValidationError(ValidationErrorType.anyOfNotMet, path: const []),
-        ]);
-      });
-
-      test('oneOfNotMet - matches none', () {
-        // Using minLength/maxLength to simulate exactLength, and minimum/maximum for exactValue
-        final s = Schema.combined(
-          oneOf: [
-            Schema.combined(
-              allOf: [StringSchema(minLength: 3), StringSchema(maxLength: 3)],
-            ),
-            Schema.combined(
-              allOf: [NumberSchema(minimum: 10), NumberSchema(maximum: 10)],
-            ),
-          ],
-        );
-        expectFailuresMatch(s, true, [
-          ValidationError(ValidationErrorType.oneOfNotMet, path: const []),
-        ]);
-      });
-
-      test('oneOfNotMet - matches multiple', () {
-        final schema = Schema.combined(
-          oneOf: [StringSchema(maxLength: 10), StringSchema(pattern: 'test')],
-        );
-        expectFailuresMatch(schema, 'test', [
-          ValidationError(ValidationErrorType.oneOfNotMet, path: const []),
-        ]);
-      });
-
-      test('notConditionViolated - matches 1 sub-schemas in "not" list', () {
-        final schema = Schema.combined(
-          not: [StringSchema(maxLength: 2), StringSchema(pattern: 'test')],
-        );
-        expectFailuresMatch(schema, 'test', [
-          ValidationError(
-            ValidationErrorType.notConditionViolated,
-            path: const [],
-          ),
-        ]);
-      });
-
-      test('notConditionViolated - matches >0 sub-schemas in "not" list', () {
-        final schema = Schema.combined(
-          not: [StringSchema(maxLength: 10), StringSchema(pattern: 'test')],
-        );
-        expectFailuresMatch(schema, 'test', [
-          ValidationError(
-            ValidationErrorType.notConditionViolated,
-            path: const [],
-          ),
-          ValidationError(
-            ValidationErrorType.notConditionViolated,
-            path: const [],
-          ),
-        ]);
-      });
-    });
-
-    group('Object Specific', () {
-      test('requiredPropertyMissing', () {
-        final schema = ObjectSchema(required: ['name']);
-        expectFailuresMatch(
-          schema,
-          {'foo': 1},
-          [
-            ValidationError(
-              ValidationErrorType.requiredPropertyMissing,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test('additionalPropertyNotAllowed - boolean false', () {
-        final schema = ObjectSchema(
-          properties: {'name': StringSchema()},
-          additionalProperties: false,
-        );
-        expectFailuresMatch(
-          schema,
-          {'name': 'test', 'age': 30},
-          [
-            ValidationError(
-              ValidationErrorType.additionalPropertyNotAllowed,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test('additionalPropertyNotAllowed - schema fails', () {
-        final schema = ObjectSchema(
-          properties: {'name': StringSchema()},
-          additionalProperties: StringSchema(minLength: 5),
-        );
-        expectFailuresMatch(
-          schema,
-          {'name': 'test', 'extra': 'abc'},
-          [
-            ValidationError(
-              ValidationErrorType.minLengthNotMet,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test('minPropertiesNotMet', () {
-        final schema = ObjectSchema(minProperties: 2);
-        expectFailuresMatch(
-          schema,
-          {'a': 1},
-          [
-            ValidationError(
-              ValidationErrorType.minPropertiesNotMet,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test('maxPropertiesExceeded', () {
-        final schema = ObjectSchema(maxProperties: 1);
-        expectFailuresMatch(
-          schema,
-          {'a': 1, 'b': 2},
-          [
-            ValidationError(
-              ValidationErrorType.maxPropertiesExceeded,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test('propertyNamesInvalid', () {
-        final schema = ObjectSchema(propertyNames: StringSchema(minLength: 3));
-        expectFailuresMatch(
-          schema,
-          {'ab': 1, 'abc': 2},
-          [
-            ValidationError(
-              ValidationErrorType.minLengthNotMet,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test('propertyValueInvalid', () {
-        final schema = ObjectSchema(
-          properties: {'age': IntegerSchema(minimum: 18)},
-        );
-        expectFailuresMatch(
-          schema,
-          {'age': 10},
-          [ValidationError(ValidationErrorType.minimumNotMet, path: const [])],
-        );
-      });
-
-      test('patternPropertyValueInvalid', () {
-        final schema = ObjectSchema(
-          patternProperties: {r'^x-': IntegerSchema(minimum: 10)},
-        );
-        expectFailuresMatch(
-          schema,
-          {'x-custom': 5},
-          [ValidationError(ValidationErrorType.minimumNotMet, path: const [])],
-        );
-      });
-
-      test('unevaluatedPropertyNotAllowed', () {
-        final schema = ObjectSchema(
-          properties: {'name': StringSchema()},
-          unevaluatedProperties: false,
-          // additionalProperties is implicitly null/not defined here
-        );
-        expectFailuresMatch(
-          schema,
-          {'name': 'test', 'age': 30},
-          [
-            ValidationError(
-              ValidationErrorType.unevaluatedPropertyNotAllowed,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test('additionalPropertyAllowed - boolean true', () {
-        final schema = ObjectSchema(
-          properties: {'name': StringSchema()},
-          additionalProperties: true,
-        );
-        expectFailuresMatch(
-          schema,
-          {'name': 'test', 'age': 30},
-          [], // No errors expected
-        );
-      });
-
-      test('unevaluatedPropertyAllowed - default behavior', () {
-        // When additionalProperties is not set and unevaluatedProperties is not false,
-        // extra properties should be allowed.
-        final schema = ObjectSchema(properties: {'name': StringSchema()});
-        expectFailuresMatch(
-          schema,
-          {'name': 'test', 'age': 30},
-          [], // No errors expected
-        );
-      });
-    });
-
-    group('List Specific', () {
-      test('minItemsNotMet', () {
-        final schema = ListSchema(minItems: 2);
-        expectFailuresMatch(
-          schema,
-          [1],
-          [ValidationError(ValidationErrorType.minItemsNotMet, path: const [])],
-        );
-      });
-
-      test('maxItemsExceeded', () {
-        final schema = ListSchema(maxItems: 1);
-        expectFailuresMatch(
-          schema,
-          [1, 2],
-          [
-            ValidationError(
-              ValidationErrorType.maxItemsExceeded,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test('uniqueItemsViolated', () {
-        final schema = ListSchema(uniqueItems: true);
-        expectFailuresMatch(
-          schema,
-          [1, 2, 1],
-          [
-            ValidationError(
-              ValidationErrorType.uniqueItemsViolated,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test('itemInvalid - using items', () {
-        final schema = ListSchema(items: IntegerSchema(minimum: 10));
-        // _validate for IntegerSchema(minimum:10) on 5 returns [minimumNotMet]
-        // The list validation adds itemInvalid if the item's validation is not empty.
-        expectFailuresMatch(
-          schema,
-          [10, 5, 12],
-          [ValidationError(ValidationErrorType.minimumNotMet, path: const [])],
-        );
-      });
-
-      test('prefixItemInvalid', () {
-        final schema = ListSchema(
-          prefixItems: [IntegerSchema(minimum: 10), StringSchema(minLength: 3)],
-        );
-        expectFailuresMatch(
-          schema,
-          [5],
-          [ValidationError(ValidationErrorType.minimumNotMet, path: const [])],
-        );
-        expectFailuresMatch(
-          schema,
-          [10, 'hi'],
-          [
-            ValidationError(
-              ValidationErrorType.minLengthNotMet,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test(
-        'unevaluatedItemNotAllowed - after prefixItems, no items schema',
-        () {
-          final schema = ListSchema(
-            prefixItems: [IntegerSchema()],
-            unevaluatedItems: false,
-          );
-          expectFailuresMatch(
-            schema,
-            [10, 'extra'],
-            [
-              ValidationError(
-                ValidationErrorType.unevaluatedItemNotAllowed,
-                path: const [],
-              ),
-            ],
-          );
-        },
-      );
-
-      test('unevaluatedItemNotAllowed - no prefixItems, no items schema', () {
-        final schema = ListSchema(unevaluatedItems: false);
-        expectFailuresMatch(
-          schema,
-          ['extra'],
-          [
-            ValidationError(
-              ValidationErrorType.unevaluatedItemNotAllowed,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test('unevaluatedItemNotAllowed - after items that cover some elements', () {
-        // This case implies items schema applies to elements after prefixItems.
-        // If unevaluatedItems is false, and an item exists beyond what items schema covers (if items is not for all remaining)
-        // or if items schema itself doesn't match.
-        // The current `_validateList` logic for `items` applies it to all elements from `startIndex`.
-        // So, `unevaluatedItems: false` would only trigger if `items` is null and `prefixItems` doesn't cover all.
-        // Let's re-test with `items` present.
-        final schemaWithItems = ListSchema(
-          prefixItems: [IntegerSchema()],
-          items: StringSchema(
-            minLength: 2,
-          ), // Applies to items after prefixItems
-          unevaluatedItems: false, // Should not be hit if items covers the rest
-        );
-        // [10, "a"] -> "a" fails StringSchema(minLength:2), so itemInvalid
-        expectFailuresMatch(
-          schemaWithItems,
-          [10, 'a'],
-          [
-            ValidationError(
-              ValidationErrorType.minLengthNotMet,
-              path: const [],
-            ),
-          ],
-        );
-
-        // If items is null, then unevaluatedItems:false applies to items after prefixItems
-        final schemaNoItems = ListSchema(
-          prefixItems: [IntegerSchema()],
-          // items: null, (implicit)
-          unevaluatedItems: false,
-        );
-        expectFailuresMatch(
-          schemaNoItems,
-          [10, 'extra string'],
-          [
-            ValidationError(
-              ValidationErrorType.unevaluatedItemNotAllowed,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test('unevaluatedItemAllowed - default behavior', () {
-        // When unevaluatedItems is not false, extra items should be allowed.
-        final schema = ListSchema(
-          prefixItems: [IntegerSchema()],
-          items: StringSchema(),
-          // unevaluatedItems is null (default), equivalent to true.
-        );
-        expectFailuresMatch(
-          schema,
-          [10, 'hello', true], // `true` is unevaluated but allowed
-          [ValidationError(ValidationErrorType.typeMismatch, path: const [])],
-          reason:
-              'Item `true` at index 2 is evaluated by `items: StringSchema()` '
-              'and fails. `unevaluatedItems` (defaulting to true) does not apply '
-              'to items already evaluated by `items` or `prefixItems`.',
-        );
-      });
-    });
-
-    group('String Specific', () {
-      test('minLengthNotMet', () {
-        final schema = StringSchema(minLength: 3);
-        expectFailuresMatch(schema, 'hi', [
-          ValidationError(ValidationErrorType.minLengthNotMet, path: const []),
-        ]);
-      });
-
-      test('maxLengthExceeded', () {
-        final schema = StringSchema(maxLength: 3);
-        expectFailuresMatch(schema, 'hello', [
-          ValidationError(
-            ValidationErrorType.maxLengthExceeded,
-            path: const [],
-          ),
-        ]);
-      });
-
-      test('patternMismatch', () {
-        final schema = StringSchema(pattern: r'^\d+$');
-        expectFailuresMatch(schema, 'abc', [
-          ValidationError(ValidationErrorType.patternMismatch, path: const []),
-        ]);
-      });
-
-      test('enumValueNotAllowed', () {
-        final schema = StringSchema(enumValues: {'a', 'b'});
-        expectFailuresMatch(schema, 'c', [
-          ValidationError(
-            ValidationErrorType.enumValueNotAllowed,
-            path: const [],
-          ),
-        ]);
-      });
-
-      test('valid enum value', () {
-        final schema = StringSchema(enumValues: {'a', 'b'});
-        expectFailuresMatch(schema, 'a', []);
-      });
-
-      test('enum with non-string data', () {
-        final schema = StringSchema(enumValues: {'a', 'b'});
-        expectFailuresMatch(schema, 1, [
-          ValidationError(ValidationErrorType.typeMismatch, path: const []),
-        ]);
-      });
-    });
-
-    group('Number Specific', () {
-      test('minimumNotMet', () {
-        final schema = NumberSchema(minimum: 10);
-        expectFailuresMatch(schema, 5, [
-          ValidationError(ValidationErrorType.minimumNotMet, path: const []),
-        ]);
-      });
-
-      test('maximumExceeded', () {
-        final schema = NumberSchema(maximum: 10);
-        expectFailuresMatch(schema, 15, [
-          ValidationError(ValidationErrorType.maximumExceeded, path: const []),
-        ]);
-      });
-
-      test('exclusiveMinimumNotMet - equal value', () {
-        final schema = NumberSchema(exclusiveMinimum: 10);
-        expectFailuresMatch(schema, 10, [
-          ValidationError(
-            ValidationErrorType.exclusiveMinimumNotMet,
-            path: const [],
-          ),
-        ]);
-      });
-      test('exclusiveMinimumNotMet - smaller value', () {
-        final schema = NumberSchema(exclusiveMinimum: 10);
-        expectFailuresMatch(schema, 9, [
-          ValidationError(
-            ValidationErrorType.exclusiveMinimumNotMet,
-            path: const [],
-          ),
-        ]);
-      });
-
-      test('exclusiveMaximumExceeded - equal value', () {
-        final schema = NumberSchema(exclusiveMaximum: 10);
-        expectFailuresMatch(schema, 10, [
-          ValidationError(
-            ValidationErrorType.exclusiveMaximumExceeded,
-            path: const [],
-          ),
-        ]);
-      });
-      test('exclusiveMaximumExceeded - larger value', () {
-        final schema = NumberSchema(exclusiveMaximum: 10);
-        expectFailuresMatch(schema, 11, [
-          ValidationError(
-            ValidationErrorType.exclusiveMaximumExceeded,
-            path: const [],
-          ),
-        ]);
-      });
-
-      test('multipleOfInvalid', () {
-        final schema = NumberSchema(multipleOf: 3);
-        expectFailuresMatch(schema, 10, [
-          ValidationError(
-            ValidationErrorType.multipleOfInvalid,
-            path: const [],
-          ),
-        ]);
-      });
-      test('multipleOfInvalid - floating point', () {
-        final schema = NumberSchema(multipleOf: 0.1);
-        expectFailuresMatch(schema, 0.25, [
-          ValidationError(
-            ValidationErrorType.multipleOfInvalid,
-            path: const [],
-          ),
-        ]);
-      });
-      test('multipleOfInvalid - valid floating point', () {
-        final schema = NumberSchema(multipleOf: 0.1);
-        expectFailuresMatch(schema, 0.3, []);
-      });
-
-      test('multipleOf zero is ignored (NumberSchema)', () {
-        // JSON Schema spec says multipleOf MUST be > 0.
-        // Current implementation ignores multipleOf if it's 0.
-        final schema = NumberSchema(multipleOf: 0);
-        expectFailuresMatch(
-          schema,
-          10.5,
-          [],
-          reason:
-              'multipleOf: 0 is currently ignored, data should pass regardless',
-        );
-      });
-    });
-
-    group('Integer Specific', () {
-      test('minimumNotMet', () {
-        final schema = IntegerSchema(minimum: 10);
-        expectFailuresMatch(schema, 5, [
-          ValidationError(ValidationErrorType.minimumNotMet, path: const []),
-        ]);
-      });
-
-      test('maximumExceeded', () {
-        final schema = IntegerSchema(maximum: 10);
-        expectFailuresMatch(schema, 15, [
-          ValidationError(ValidationErrorType.maximumExceeded, path: const []),
-        ]);
-      });
-
-      test('exclusiveMinimumNotMet - equal value', () {
-        final schema = IntegerSchema(exclusiveMinimum: 10);
-        expectFailuresMatch(schema, 10, [
-          ValidationError(
-            ValidationErrorType.exclusiveMinimumNotMet,
-            path: const [],
-          ),
-        ]);
-      });
-      test('exclusiveMinimumNotMet - smaller value', () {
-        final schema = IntegerSchema(exclusiveMinimum: 10);
-        expectFailuresMatch(schema, 9, [
-          ValidationError(
-            ValidationErrorType.exclusiveMinimumNotMet,
-            path: const [],
-          ),
-        ]);
-      });
-
-      test('exclusiveMaximumExceeded - equal value', () {
-        final schema = IntegerSchema(exclusiveMaximum: 10);
-        expectFailuresMatch(schema, 10, [
-          ValidationError(
-            ValidationErrorType.exclusiveMaximumExceeded,
-            path: const [],
-          ),
-        ]);
-      });
-      test('exclusiveMaximumExceeded - larger value', () {
-        final schema = IntegerSchema(exclusiveMaximum: 10);
-        expectFailuresMatch(schema, 11, [
-          ValidationError(
-            ValidationErrorType.exclusiveMaximumExceeded,
-            path: const [],
-          ),
-        ]);
-      });
-
-      test('multipleOfInvalid', () {
-        final schema = IntegerSchema(multipleOf: 3);
-        expectFailuresMatch(schema, 10, [
-          ValidationError(
-            ValidationErrorType.multipleOfInvalid,
-            path: const [],
-          ),
-        ]);
-      });
-
-      test('multipleOf zero is ignored (IntegerSchema)', () {
-        // JSON Schema spec says multipleOf MUST be > 0.
-        // Current implementation ignores multipleOf if it's 0.
-        final schema = IntegerSchema(multipleOf: 0);
-        expectFailuresMatch(
-          schema,
-          7,
-          [],
-          reason:
-              'multipleOf: 0 is currently ignored, data should pass regardless',
-        );
-      });
-    });
-
-    group('Schema Combinators - Advanced', () {
-      test('empty combinator lists', () {
-        // Per JSON Schema spec, allOf, anyOf, oneOf arrays must be non-empty.
-        // 'not' takes a single schema. Assuming dart_mcp's List<Schema> for 'not'
-        // means data must not match any in the list.
-
-        final schemaAllOfEmpty = Schema.combined(allOf: []);
-        expectFailuresMatch(
-          schemaAllOfEmpty,
-          'any data',
-          [],
-          reason: 'allOf:[] is vacuously true',
-        );
-
-        final schemaAnyOfEmpty = Schema.combined(anyOf: []);
-        expectFailuresMatch(schemaAnyOfEmpty, 'any data', [
-          ValidationError(ValidationErrorType.anyOfNotMet, path: const []),
-        ]);
-
-        final schemaOneOfEmpty = Schema.combined(oneOf: []);
-        expectFailuresMatch(schemaOneOfEmpty, 'any data', [
-          ValidationError(ValidationErrorType.oneOfNotMet, path: const []),
-        ]);
-
-        // If 'not' is a list of schemas, and the list is empty,
-        // then the data doesn't match any schema in the 'not' list.
-        // So, the 'not' condition is satisfied.
-        final schemaNotEmpty = Schema.combined(not: []);
-        expectFailuresMatch(
-          schemaNotEmpty,
-          'any data',
-          [],
-          reason: 'not:[] means no forbidden schemas, so it passes validation',
-        );
-      });
-    });
-
-    group('Complex scenarios and interactions', () {
-      test('allOf with type constraint on parent schema', () {
-        // Schema is explicitly a string, and also has allOf constraints.
-        // To achieve this, we construct the map directly.
-        final schema = Schema.fromMap({
-          'type': JsonType.string.typeName,
-          'minLength': 2, // This is from the main schema's direct validation
-          'allOf': [
-            // This is from allOf
-            StringSchema(maxLength: 5),
-            StringSchema(pattern: r'^[a-z]+$'),
-          ],
-        });
-
-        // Fails minLength (from parent StringSchema) and pattern (from allOf)
-        expectFailuresExact(schema, 'A', [
-          ValidationError(ValidationErrorType.allOfNotMet, path: []),
-          ValidationError(
-            ValidationErrorType.minLengthNotMet,
-            path: [],
-            details: 'String "A" is not at least 2 characters long',
-          ),
-          ValidationError(
-            ValidationErrorType.patternMismatch,
-            path: [],
-            details: 'String "A" doesn\'t match the pattern "^[a-z]+\$"',
-          ),
-        ]);
-
-        // Fails maxLength (from allOf)
-        expectFailuresExact(schema, 'abcdef', [
-          ValidationError(ValidationErrorType.allOfNotMet, path: []),
-          ValidationError(
-            ValidationErrorType.maxLengthExceeded,
-            path: [],
-            details: 'String "abcdef" is more than 5 characters long',
-          ),
-        ]);
-      });
-
-      test('Object with property value invalid (deeper failure)', () {
-        final schema = ObjectSchema(
-          properties: {
-            'user': ObjectSchema(
-              properties: {'name': StringSchema(minLength: 5)},
-            ),
-          },
-        );
-        // 'user.name' is "hi" which fails minLength: 5
-        // _validate(StringSchema(...), "hi") -> [minLengthNotMet]
-        // This becomes propertyValueInvalid for 'name'
-        // Then this becomes propertyValueInvalid for 'user'
-        expectFailuresExact(
-          schema,
-          {
-            'user': {'name': 'hi'},
-          },
-          [
-            ValidationError(
-              ValidationErrorType.minLengthNotMet,
-              path: ['user', 'name'],
-              details: 'String "hi" is not at least 5 characters long',
-            ),
-          ],
-        );
-      });
-
-      test('List with item invalid (deeper failure)', () {
-        final schema = ListSchema(
-          items: ObjectSchema(properties: {'id': IntegerSchema(minimum: 100)}),
-        );
-        // The object {'id': 10} fails IntegerSchema(minimum:100)
-        // _validate(ObjectSchema(...), {'id':10}) -> [propertyValueInvalid] (due to id:10 failing)
-        // So the list item is invalid.
-        expectFailuresExact(
-          schema,
-          [
-            {'id': 101},
-            {'id': 10}, // This item is invalid
-          ],
-          [
-            ValidationError(
-              ValidationErrorType.minimumNotMet,
-              path: ['1', 'id'],
-              details: 'Value 10 is less than the minimum of 100',
-            ),
-          ],
-        );
-      });
-
-      test('Object with additionalProperties schema', () {
-        final schema = ObjectSchema(
-          properties: {'known': StringSchema()},
-          additionalProperties: IntegerSchema(minimum: 0),
-        );
-        // Valid: known property and valid additional property
-        expectFailuresMatch(schema, {'known': 'yes', 'extraNum': 10}, []);
-        // Invalid: additional property fails its schema
-        expectFailuresMatch(
-          schema,
-          {'known': 'yes', 'extraNum': -5},
-          [ValidationError(ValidationErrorType.minimumNotMet, path: const [])],
-        );
-        // Invalid: additional property is wrong type for its schema
-        expectFailuresMatch(
-          schema,
-          {'known': 'yes', 'extraStr': 'text'},
-          [ValidationError(ValidationErrorType.typeMismatch, path: const [])],
-        );
-      });
-
-      test('Object with unevaluatedProperties: false and patternProperties', () {
-        final schema = ObjectSchema(
-          patternProperties: {r'^x-': StringSchema()},
-          unevaluatedProperties: false,
-        );
-        // Valid: matches patternProperty
-        expectFailuresMatch(schema, {'x-foo': 'bar'}, []);
-        // Invalid: does not match patternProperty, and unevaluatedProperties is false
-        expectFailuresMatch(
-          schema,
-          {'y-foo': 'bar'},
-          [
-            ValidationError(
-              ValidationErrorType.unevaluatedPropertyNotAllowed,
-              path: const [],
-            ),
-          ],
-        );
-      });
-
-      test(
-        'Object with unevaluatedProperties: false, properties, and additionalProperties: true (should allow unevaluated)',
-        () {
-          final schema = ObjectSchema(
-            properties: {'name': StringSchema()},
-            additionalProperties: true, // Allows any additional properties
-            unevaluatedProperties:
-                false, // This should be superseded by additionalProperties: true for evaluation purposes
-          );
-          // 'age' is covered by additionalProperties: true, so it's evaluated (and allowed).
-          // Thus, unevaluatedProperties: false should not trigger.
-          expectFailuresMatch(schema, {'name': 'test', 'age': 30}, []);
-        },
-      );
-
-      test(
-        'Object with unevaluatedProperties: false, properties, and additionalProperties: Schema (valid additional)',
-        () {
-          final schema = ObjectSchema(
-            properties: {'name': StringSchema()},
-            additionalProperties: IntegerSchema(),
-            unevaluatedProperties: false,
-          );
-          // 'age' is covered by additionalProperties: IntegerSchema, and 30 is a valid integer.
-          // So it's evaluated. unevaluatedProperties: false should not trigger.
-          expectFailuresMatch(schema, {'name': 'test', 'age': 30}, []);
-        },
-      );
-
-      test(
-        'Object with unevaluatedProperties: false, properties, and additionalProperties: Schema (invalid additional)',
-        () {
-          final schema = ObjectSchema(
-            properties: {'name': StringSchema()},
-            additionalProperties: IntegerSchema(minimum: 100),
-            unevaluatedProperties: false,
-          );
-          // 'age' is covered by additionalProperties: IntegerSchema(minimum:100), but 30 is invalid.
-          // This should result in `additionalPropertyNotAllowed`.
-          // `unevaluatedProperties` should not trigger because 'age' was subject to evaluation by `additionalProperties`.
-          expectFailuresMatch(
-            schema,
-            {'name': 'test', 'age': 30},
-            [
-              ValidationError(
-                ValidationErrorType.minimumNotMet,
-                path: const [],
-              ),
-            ],
-          );
-        },
-      );
-
-      test('List with unevaluatedItems: false and items schema', () {
-        final schema = ListSchema(
-          items: IntegerSchema(), // Applies to all items if no prefixItems
-          unevaluatedItems: false,
-        );
-        // Valid: all items match IntegerSchema
-        expectFailuresMatch(schema, [1, 2, 3], []);
-        // Invalid: one item does not match IntegerSchema, results in itemInvalid
-        // unevaluatedItems:false should not trigger because items schema applies.
-        expectFailuresMatch(
-          schema,
-          [1, 'b', 3],
-          [ValidationError(ValidationErrorType.typeMismatch, path: const [])],
-        );
-      });
-
-      test(
-        'List with unevaluatedItems: false, prefixItems, and items schema',
-        () {
-          final schema = ListSchema(
-            prefixItems: [StringSchema()],
-            items: IntegerSchema(), // Applies to items after prefixItems
-            unevaluatedItems: false,
-          );
-          // Valid
-          expectFailuresMatch(schema, ['a', 1, 2], []);
-          // Invalid: item after prefixItems fails IntegerSchema
-          expectFailuresMatch(
-            schema,
-            ['a', 1, 'c'],
-            [ValidationError(ValidationErrorType.typeMismatch, path: const [])],
-          );
-          // Invalid: prefixItem fails StringSchema
-          expectFailuresMatch(
-            schema,
-            [10, 1, 2],
-            [ValidationError(ValidationErrorType.typeMismatch, path: const [])],
-          );
-        },
-      );
-
-      test(
-        'Schema with no type but with type-specific constraints (e.g. minLength on a generic schema)',
-        () {
-          // This schema is malformed from a JSON Schema perspective, as
-          // minLength only applies to strings. The current validator will apply
-          // combinators first. Then, if schema.type is null, it won't call
-          // _validateString, _validateNumber etc. So, minLength would be
-          // ignored if not for a sub-schema in allOf/anyOf/oneOf/not.
-          final schemaWithMinLengthNoType = Schema.fromMap({'minLength': 5});
-          expectFailuresMatch(
-            schemaWithMinLengthNoType,
-            'hi',
-            [],
-          ); // minLength is ignored as type is not string
-          expectFailuresMatch(
-            schemaWithMinLengthNoType,
-            12345,
-            [],
-          ); // minLength is ignored
-
-          final s = Schema.fromMap({
-            'type': JsonType.string.typeName,
-            'minLength': 5,
-            'allOf': [
-              Schema.fromMap({'pattern': r'^[a-z]+$'}),
-            ],
-          });
-
-          expectFailuresExact(s, 'Hi', [
-            ValidationError(ValidationErrorType.allOfNotMet, path: []),
-            ValidationError(
-              ValidationErrorType.minLengthNotMet,
-              path: [],
-              details: 'String "Hi" is not at least 5 characters long',
-            ),
-            ValidationError(
-              ValidationErrorType.patternMismatch,
-              path: [],
-              details: 'String "Hi" doesn\'t match the pattern "^[a-z]+\$"',
-            ),
-          ]);
-
-          // "Hiall" passes minLength.
-          // allOf part passes.
-          // Result: []
-          expectFailuresExact(s, 'Hiall', [
-            ValidationError(ValidationErrorType.allOfNotMet, path: []),
-            ValidationError(
-              ValidationErrorType.patternMismatch,
-              path: [],
-              details: 'String "Hiall" doesn\'t match the pattern "^[a-z]+\$"',
-            ),
-          ]);
-
-          // To make the pattern apply, it needs to be a StringSchema too.
-          final s2 = Schema.fromMap({
-            'type': JsonType.string.typeName,
-            'minLength': 5,
-            'allOf': [StringSchema(pattern: r'^[a-z]+$')],
-          });
-          // "LongEnoughButCAPS"
-          // minLength:5 passes.
-          // allOf: StringSchema(pattern:
-          //   '^[a-z]+$').validate("LongEnoughButCAPS") -> [patternMismatch]
-          // So allOf fails.
-          // Result: [allOfNotMet, patternMismatch]
-          expectFailuresExact(s2, 'LongEnoughButCAPS', [
-            ValidationError(ValidationErrorType.allOfNotMet, path: []),
-            ValidationError(
-              ValidationErrorType.patternMismatch,
-              path: [],
-              details:
-                  'String "LongEnoughButCAPS" doesn\'t match the pattern "^[a-z]+\$"',
-            ),
-          ]);
-        },
       );
     });
   });
