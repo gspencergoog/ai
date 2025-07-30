@@ -9,6 +9,7 @@ dependencies:
   args: ^2.7.0
   characters: ^1.4.1
   collection: ^1.19.1
+  decimal: ^3.2.4
   http: ^1.4.0
   mockito: ^5.5.0
   path: ^1.9.0

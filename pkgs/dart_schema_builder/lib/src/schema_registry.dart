@@ -36,6 +36,15 @@ class SchemaRegistry {
     return _getSchemaFromFragment(uri, schema);
   }
 
+  Uri? getUriForSchema(Schema schema) {
+    for (final entry in _schemas.entries) {
+      if (entry.value == schema) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
   void _registerIds(Schema schema, Uri baseUri) {
     final id = schema.$id;
     if (id != null) {

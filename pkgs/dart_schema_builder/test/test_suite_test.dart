@@ -38,45 +38,7 @@ void main() {
       .where((path) =>
           // TODO(gspencer): Re-enable all tests.
           // Failing tests, disabled for now.
-          !path.endsWith('ref.json') &&
-          !path.endsWith('refRemote.json') &&
-          !path.endsWith('dynamicRef.json') &&
-          !path.endsWith('unevaluatedItems.json') &&
-          // Passing tests.
-          (path.endsWith('allOf.json') ||
-              path.endsWith('anyOf.json') ||
-              path.endsWith('boolean_schema.json') ||
-              path.endsWith('const.json') ||
-              path.endsWith('contains.json') ||
-              path.endsWith('default.json') ||
-              path.endsWith('defs.json') ||
-              path.endsWith('dependentRequired.json') ||
-              path.endsWith('dependentSchemas.json') ||
-              path.endsWith('enum.json') ||
-              path.endsWith('exclusiveMaximum.json') ||
-              path.endsWith('exclusiveMinimum.json') ||
-              path.endsWith('format.json') ||
-              path.endsWith('if-then-else.json') ||
-              path.endsWith('items.json') ||
-              path.endsWith('maximum.json') ||
-              path.endsWith('maxItems.json') ||
-              path.endsWith('maxLength.json') ||
-              path.endsWith('maxProperties.json') ||
-              path.endsWith('minimum.json') ||
-              path.endsWith('minItems.json') ||
-              path.endsWith('minLength.json') ||
-              path.endsWith('minProperties.json') ||
-              path.endsWith('multipleOf.json') ||
-              path.endsWith('not.json') ||
-              path.endsWith('oneOf.json') ||
-              path.endsWith('pattern.json') ||
-              path.endsWith('patternProperties.json') ||
-              path.endsWith('prefixItems.json') ||
-              path.endsWith('properties.json') ||
-              path.endsWith('propertyNames.json') ||
-              path.endsWith('required.json') ||
-              path.endsWith('type.json') ||
-              path.endsWith('unevaluatedProperties.json')))
+          !path.endsWith('refRemote.json'))
       .toSet();
 
   for (final file in testFilePaths.map(File.new)) {
@@ -95,7 +57,8 @@ void main() {
 
       group('$groupDescription - ${file.path}', () {
         if (groupDescription ==
-            "collect annotations inside a 'not', even if collection is disabled") {
+            "collect annotations inside a 'not', even if collection is "
+                'disabled') {
           return;
         }
         final testCases = testGroup['tests'] as List;
