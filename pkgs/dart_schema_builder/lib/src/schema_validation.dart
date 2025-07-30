@@ -11,7 +11,7 @@ import 'list_schema.dart';
 import 'number_schema.dart';
 import 'object_schema.dart';
 import 'schema.dart';
-import 'schema_cache.dart';
+import 'schema_registry.dart';
 import 'string_schema.dart';
 import 'utils.dart';
 import 'validation_error.dart';
@@ -21,15 +21,32 @@ class ValidationContext {
   final bool strictFormat;
   final List<Schema> dynamicScope;
   final Uri? sourceUri;
-  final SchemaCache schemaCache;
+  final SchemaRegistry schemaRegistry;
 
   ValidationContext(
     this.rootSchema, {
     this.strictFormat = false,
     this.sourceUri,
-    SchemaCache? schemaCache,
-  }) : dynamicScope = [rootSchema],
-       schemaCache = schemaCache ?? SchemaCache();
+    required this.schemaRegistry,
+  }) : dynamicScope = [rootSchema];
+
+  ValidationContext._copyWith({
+    required this.rootSchema,
+    required this.strictFormat,
+    required this.dynamicScope,
+    required this.sourceUri,
+    required this.schemaRegistry,
+  });
+
+  ValidationContext withSourceUri(Uri newSourceUri) {
+    return ValidationContext._copyWith(
+      rootSchema: rootSchema,
+      strictFormat: strictFormat,
+      dynamicScope: dynamicScope,
+      sourceUri: newSourceUri,
+      schemaRegistry: schemaRegistry,
+    );
+  }
 }
 
 Future<void> validateSubSchema(
@@ -110,10 +127,14 @@ extension SchemaValidation on Schema {
     Uri? sourceUri,
   }) async {
     final failures = createHashSet();
+    final schemaRegistry = SchemaRegistry();
+    final baseUri = sourceUri ?? Uri.parse('local://schema');
+    schemaRegistry.addSchema(baseUri, this);
     final context = ValidationContext(
       this,
       strictFormat: strictFormat,
-      sourceUri: sourceUri,
+      sourceUri: baseUri,
+      schemaRegistry: schemaRegistry,
     );
     await validateSchema(data, [], failures, context);
     return failures.toList();
@@ -128,17 +149,18 @@ extension SchemaValidation on Schema {
     context.dynamicScope.add(this);
 
     if ($dynamicRef case final ref?) {
-      final referencedSchema = await resolveDynamicRef(
+      final resolution = await resolveDynamicRef(
         ref,
         context.dynamicScope,
         context,
       );
-      if (referencedSchema != null) {
+      if (resolution case (final referencedSchema, final referencedUri)?) {
+        final newContext = context.withSourceUri(referencedUri);
         await referencedSchema.validateSchema(
           data,
           currentPath,
           accumulatedFailures,
-          context,
+          newContext,
         );
       }
       context.dynamicScope.removeLast();
@@ -146,21 +168,33 @@ extension SchemaValidation on Schema {
     }
 
     if ($ref case final ref?) {
-      final referencedSchema = await resolveRef(
+      final resolution = await resolveRef(
         ref,
         context.rootSchema,
         context,
       );
-      if (referencedSchema != null) {
-        final mergedSchemaMap = {...referencedSchema.value, ...value};
-        mergedSchemaMap.remove(kRef);
-        final mergedSchema = Schema.fromMap(mergedSchemaMap);
-        await mergedSchema.validateSchema(
+      if (resolution case (final referencedSchema, final referencedUri)?) {
+        // First, validate against the referenced schema.
+        final newContext = context.withSourceUri(referencedUri);
+        await referencedSchema.validateSchema(
           data,
           currentPath,
           accumulatedFailures,
-          context,
+          newContext,
         );
+
+        // Then, validate against the sibling keywords.
+        final siblingSchemaMap = {...value};
+        siblingSchemaMap.remove(kRef);
+        if (siblingSchemaMap.isNotEmpty) {
+          final siblingSchema = Schema.fromMap(siblingSchemaMap);
+          await siblingSchema.validateSchema(
+            data,
+            currentPath,
+            accumulatedFailures,
+            context,
+          );
+        }
       } else {
         accumulatedFailures.add(
           ValidationError(
@@ -532,6 +566,25 @@ extension SchemaValidation on Schema {
       }
     }
 
+    // Special handling for the `type` keyword when validating a schema.
+    if (data.containsKey('type')) {
+      final typeValue = data['type'];
+      final types = switch (typeValue) {
+        String() => [typeValue],
+        List() => typeValue.cast<String>(),
+        _ => null,
+      };
+      if (types == null) {
+        accumulatedFailures.add(
+          ValidationError(
+            ValidationErrorType.typeMismatch,
+            path: [...currentPath, 'type'],
+            details: 'The value of "type" must be a string or an array of strings',
+          ),
+        );
+      }
+    }
+
     for (final dataKey in data.keys) {
       if (evaluatedKeys.contains(dataKey)) continue;
 
@@ -762,165 +815,19 @@ extension SchemaValidation on Schema {
     throw StateError('Unknown JSON type for value: $data');
   }
 
-  Future<Schema?> resolveRef(
+  Future<(Schema, Uri)?> resolveRef(
     String ref,
     Schema rootSchema,
     ValidationContext context,
   ) async {
-    if (ref.startsWith('#')) {
-      final pointer = ref.substring(1);
-      if (pointer.isEmpty) {
-        return rootSchema;
-      }
-      if (!pointer.startsWith('/')) {
-        // It's an anchor.
-        return _findAnchor(pointer, rootSchema);
-      }
-      return _resolveJsonPointer(rootSchema, pointer);
-    }
-
-    // It might be an ID or an anchor.
-    final byId = _findId(ref, rootSchema, context.sourceUri);
-    if (byId != null) {
-      return byId;
-    }
-    final byAnchor = _findAnchor(ref, rootSchema);
-    if (byAnchor != null) {
-      return byAnchor;
-    }
-
-    // It's a remote reference.
-    var sourceUri = context.sourceUri;
-    if (rootSchema.$id != null) {
-      sourceUri = sourceUri?.resolve(rootSchema.$id!);
-    }
-    if (sourceUri == null) {
-      return null; // Cannot resolve without a source URI.
-    }
-
-    final parts = ref.split('#');
-    final remoteUri = sourceUri.resolve(parts[0]);
-    final pointer = parts.length > 1 ? '#${parts[1]}' : '';
-
-    try {
-      final remoteSchema = await context.schemaCache.get(remoteUri);
-      if (remoteSchema == null) {
-        return null;
-      }
-      if (pointer.isEmpty) {
-        return remoteSchema;
-      }
-      final newContext = ValidationContext(
-        remoteSchema,
-        strictFormat: context.strictFormat,
-        sourceUri: remoteUri,
-        schemaCache: context.schemaCache,
-      );
-      return await resolveRef(pointer, remoteSchema, newContext);
-    } catch (e) {
-      return null;
-    }
+    final baseUri = context.sourceUri!;
+    final refUri = baseUri.resolve(ref);
+    final schema = await context.schemaRegistry.resolve(refUri);
+    if (schema == null) return null;
+    return (schema, refUri);
   }
 
-  Schema? _resolveJsonPointer(Schema schema, String pointer) {
-    final parts = pointer.substring(1).split('/');
-    dynamic current = schema;
-    for (final part in parts) {
-      final decodedPart = Uri.decodeComponent(
-        part,
-      ).replaceAll('~1', '/').replaceAll('~0', '~');
-      if (current is Schema) {
-        if (!current.value.containsKey(decodedPart)) {
-          return null;
-        }
-        current = current.value[decodedPart];
-      } else if (current is Map && current.containsKey(decodedPart)) {
-        current = current[decodedPart];
-      } else if (current is List && int.tryParse(decodedPart) != null) {
-        final index = int.parse(decodedPart);
-        if (index < current.length) {
-          current = current[index];
-        } else {
-          return null;
-        }
-      } else {
-        return null;
-      }
-    }
-    if (current is Schema) {
-      return current;
-    } else if (current is Map) {
-      return Schema.fromMap(current as Map<String, Object?>);
-    }
-    return null;
-  }
-
-  Schema? _findId(String id, Schema schema, [Uri? baseUri]) {
-    Schema? result;
-    final visited = <Map<String, Object?>>{};
-
-    void visit(dynamic current, Uri? currentBaseUri) {
-      if (result != null) return;
-      if (current is Map<String, Object?>) {
-        if (visited.contains(current)) return;
-        visited.add(current);
-
-        final currentSchema = Schema.fromMap(current);
-        Uri? newBaseUri = currentBaseUri;
-        if (currentSchema.$id != null) {
-          newBaseUri = currentBaseUri?.resolve(currentSchema.$id!);
-          if (newBaseUri.toString() == baseUri?.resolve(id).toString() ||
-              newBaseUri.toString() == id ||
-              currentSchema.$id == id) {
-            result = currentSchema;
-            return;
-          }
-        }
-        for (final value in current.values) {
-          visit(value, newBaseUri);
-        }
-      } else if (current is List) {
-        for (final item in current) {
-          visit(item, currentBaseUri);
-        }
-      }
-    }
-
-    visit(schema.value, baseUri);
-    return result;
-  }
-
-  Schema? _findAnchor(String anchorName, Schema schema) {
-    Schema? result;
-    final visited = <Map<String, Object?>>{};
-
-    void visit(dynamic current) {
-      if (result != null) return;
-      if (current is Map<String, Object?>) {
-        if (visited.contains(current)) return;
-        visited.add(current);
-
-        final currentSchema = Schema.fromMap(current);
-        if (currentSchema.$anchor == anchorName ||
-            currentSchema.$dynamicAnchor == anchorName) {
-          result = currentSchema;
-          return;
-        }
-        for (final value in current.values) {
-          visit(value);
-        }
-      } else if (current is List) {
-        for (final item in current) {
-          visit(item);
-        }
-      }
-    }
-
-    visit(schema.value);
-    return result;
-  }
-
-  Future<Schema?> resolveDynamicRef(
+  Future<(Schema, Uri)?> resolveDynamicRef(
     String ref,
     List<Schema> dynamicScope,
     ValidationContext context,
@@ -931,13 +838,14 @@ extension SchemaValidation on Schema {
     }
     final pointer = ref.substring(1);
     if (pointer.isEmpty) {
-      return dynamicScope.last;
+      return (dynamicScope.last, context.sourceUri!);
     }
     if (!pointer.startsWith('/')) {
       // It's a dynamic anchor.
       final anchorSchema = _findDynamicAnchor(pointer, dynamicScope);
       if (anchorSchema != null) {
-        return anchorSchema;
+        // The anchor doesn't change the URI context.
+        return (anchorSchema, context.sourceUri!);
       }
     }
     // Fallback to normal $ref resolution against the root schema.

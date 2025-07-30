@@ -14,6 +14,12 @@ class SchemaRegistry {
   SchemaRegistry({SchemaCache? schemaCache})
       : _schemaCache = schemaCache ?? SchemaCache();
 
+  void addSchema(Uri uri, Schema schema) {
+    final uriWithoutFragment = uri.removeFragment();
+    _schemas[uriWithoutFragment] = schema;
+    _registerIds(schema, uriWithoutFragment);
+  }
+
   Future<Schema?> resolve(Uri uri) async {
     final uriWithoutFragment = uri.removeFragment();
     if (_schemas.containsKey(uriWithoutFragment)) {
@@ -34,27 +40,69 @@ class SchemaRegistry {
     final id = schema.$id;
     if (id != null) {
       final newUri = baseUri.resolve(id);
-      _schemas[newUri] = schema;
+      _schemas[newUri.removeFragment()] = schema;
       baseUri = newUri;
     }
 
-    if (schema.value.values.whereType<Map<String, Object?>>().isNotEmpty) {
-      for (final value in schema.value.values) {
-        if (value is Map<String, Object?>) {
-          _registerIds(Schema.fromMap(value), baseUri);
-        } else if (value is List) {
-          for (final item in value) {
-            if (item is Map<String, Object?>) {
-              _registerIds(Schema.fromMap(item), baseUri);
-            }
+    void recurseOnMap(Map<String, Object?> map) {
+      _registerIds(Schema.fromMap(map), baseUri);
+    }
+
+    void recurseOnList(List list) {
+      for (final item in list) {
+        if (item is Map<String, Object?>) {
+          recurseOnMap(item);
+        }
+      }
+    }
+
+    // Keywords with map-of-schemas values
+    const mapOfSchemasKeywords = [
+      'properties',
+      'patternProperties',
+      'dependentSchemas',
+      '\$defs'
+    ];
+    for (final keyword in mapOfSchemasKeywords) {
+      if (schema.value[keyword] case final Map map?) {
+        for (final value in map.values) {
+          if (value is Map<String, Object?>) {
+            recurseOnMap(value);
           }
         }
+      }
+    }
+
+    // Keywords with schema values
+    const schemaKeywords = [
+      'additionalProperties',
+      'unevaluatedProperties',
+      'items',
+      'unevaluatedItems',
+      'contains',
+      'propertyNames',
+      'not',
+      'if',
+      'then',
+      'else'
+    ];
+    for (final keyword in schemaKeywords) {
+      if (schema.value[keyword] case final Map<String, Object?> map) {
+        recurseOnMap(map);
+      }
+    }
+
+    // Keywords with list-of-schemas values
+    const listOfSchemasKeywords = ['allOf', 'anyOf', 'oneOf', 'prefixItems'];
+    for (final keyword in listOfSchemasKeywords) {
+      if (schema.value[keyword] case final List list) {
+        recurseOnList(list);
       }
     }
   }
 
   Schema? _getSchemaFromFragment(Uri uri, Schema schema) {
-    if (!uri.hasFragment) {
+    if (!uri.hasFragment || uri.fragment.isEmpty) {
       return schema;
     }
 
@@ -95,6 +143,8 @@ class SchemaRegistry {
       return current;
     } else if (current is Map) {
       return Schema.fromMap(current as Map<String, Object?>);
+    } else if (current is bool) {
+      return Schema.fromBoolean(current);
     }
     return null;
   }
