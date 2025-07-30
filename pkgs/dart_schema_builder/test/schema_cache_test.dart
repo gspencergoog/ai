@@ -45,8 +45,9 @@ void main() {
       final schemaJson = {'type': 'number'};
       final responseBody = jsonEncode(schemaJson);
 
-      when(mockHttpClient.get(uri))
-          .thenAnswer((_) async => http.Response(responseBody, 200));
+      when(
+        mockHttpClient.get(uri),
+      ).thenAnswer((_) async => http.Response(responseBody, 200));
 
       final schema = await schemaCache.get(uri);
 
@@ -72,8 +73,9 @@ void main() {
 
     test('returns null for failed HTTP request', () async {
       final uri = Uri.parse('http://example.com/schema.json');
-      when(mockHttpClient.get(uri))
-          .thenAnswer((_) async => http.Response('Not Found', 404));
+      when(
+        mockHttpClient.get(uri),
+      ).thenAnswer((_) async => http.Response('Not Found', 404));
       final schema = await schemaCache.get(uri);
       expect(schema, isNull);
     });

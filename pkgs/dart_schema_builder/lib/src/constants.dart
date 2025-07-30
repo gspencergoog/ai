@@ -53,4 +53,3 @@ const kMaxContains = 'maxContains';
 const kAnchor = '\$anchor';
 const kDynamicAnchor = '\$dynamicAnchor';
 const kDynamicRef = '\$dynamicRef';
-

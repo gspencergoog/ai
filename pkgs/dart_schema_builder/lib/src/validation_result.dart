@@ -11,12 +11,10 @@ class AnnotationSet {
   final Set<int> evaluatedItems;
 
   AnnotationSet({Set<String>? evaluatedKeys, Set<int>? evaluatedItems})
-      : evaluatedKeys = evaluatedKeys ?? {},
-        evaluatedItems = evaluatedItems ?? {};
+    : evaluatedKeys = evaluatedKeys ?? {},
+      evaluatedItems = evaluatedItems ?? {};
 
-  AnnotationSet.empty()
-      : evaluatedKeys = {},
-        evaluatedItems = {};
+  AnnotationSet.empty() : evaluatedKeys = {}, evaluatedItems = {};
 
   AnnotationSet merge(AnnotationSet other) {
     return AnnotationSet(
@@ -47,17 +45,17 @@ class ValidationResult {
   final AnnotationSet annotations;
 
   ValidationResult(this.isValid, List<ValidationError> errors, this.annotations)
-      : errors = UnmodifiableListView(errors);
+    : errors = UnmodifiableListView(errors);
 
   ValidationResult.success(this.annotations)
-      : isValid = true,
-        errors = const [];
+    : isValid = true,
+      errors = const [];
 
   ValidationResult.failure(List<ValidationError> errors, this.annotations)
-      : isValid = false,
-        errors = UnmodifiableListView(errors);
+    : isValid = false,
+      errors = UnmodifiableListView(errors);
 
   ValidationResult.fromErrors(List<ValidationError> errors, this.annotations)
-      : isValid = errors.isEmpty,
-        errors = UnmodifiableListView(errors);
+    : isValid = errors.isEmpty,
+      errors = UnmodifiableListView(errors);
 }

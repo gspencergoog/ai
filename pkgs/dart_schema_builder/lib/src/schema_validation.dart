@@ -126,15 +126,16 @@ extension SchemaValidation on Schema {
     Object? data, {
     bool strictFormat = false,
     Uri? sourceUri,
+    SchemaRegistry? schemaRegistry,
   }) async {
-    final schemaRegistry = SchemaRegistry();
+    final registry = schemaRegistry ?? SchemaRegistry();
     final baseUri = sourceUri ?? Uri.parse('local://schema');
-    schemaRegistry.addSchema(baseUri, this);
+    registry.addSchema(baseUri, this);
     final context = ValidationContext(
       this,
       strictFormat: strictFormat,
       sourceUri: baseUri,
-      schemaRegistry: schemaRegistry,
+      schemaRegistry: registry,
     );
     final result = await validateSchema(data, [], context, [this]);
     return result.errors;
@@ -393,7 +394,11 @@ extension SchemaValidation on Schema {
             } else if (up is Map) {
               final result = await Schema.fromMap(up.cast<String, Object?>())
                   .validateSchema(
-                      data[dataKey], newPath, context, newDynamicScope);
+                    data[dataKey],
+                    newPath,
+                    context,
+                    newDynamicScope,
+                  );
               errors.addAll(result.errors);
               allAnnotations = allAnnotations.merge(result.annotations);
             }
@@ -415,8 +420,12 @@ extension SchemaValidation on Schema {
                 ),
               );
             } else if (ui is Schema) {
-              final result = await (ui as Schema)
-                  .validateSchema(data[i], newPath, context, newDynamicScope);
+              final result = await (ui as Schema).validateSchema(
+                data[i],
+                newPath,
+                context,
+                newDynamicScope,
+              );
               errors.addAll(result.errors);
               allAnnotations = allAnnotations.merge(result.annotations);
             }
@@ -495,7 +504,8 @@ extension SchemaValidation on Schema {
                 ValidationErrorType.maxLengthExceeded,
                 path: currentPath,
                 details:
-                    'String length ${data.characters.length} exceeds maximum length of $max',
+                    'String length ${data.characters.length} exceeds '
+                    'maximum length of $max',
               ),
             );
           }
@@ -506,7 +516,8 @@ extension SchemaValidation on Schema {
                 ValidationErrorType.minLengthNotMet,
                 path: currentPath,
                 details:
-                    'String length ${data.characters.length} is less than minimum of $min',
+                    'String length ${data.characters.length} is less '
+                    'than minimum of $min',
               ),
             );
           }
@@ -618,8 +629,8 @@ extension SchemaValidation on Schema {
           ValidationErrorType.minPropertiesNotMet,
           path: currentPath,
           details:
-              'There should be at least $min properties. Only '
-              '${data.keys.length} were found',
+              'There should be at least $min properties. '
+              'Only ${data.keys.length} were found',
         ),
       );
     }
@@ -630,7 +641,9 @@ extension SchemaValidation on Schema {
         ValidationError(
           ValidationErrorType.maxPropertiesExceeded,
           path: currentPath,
-          details: 'Exceeded maxProperties limit of $max (${data.keys.length})',
+          details:
+              'Exceeded maxProperties limit of $max '
+              '(${data.keys.length})',
         ),
       );
     }
@@ -657,8 +670,8 @@ extension SchemaValidation on Schema {
                   ValidationErrorType.dependentRequiredMissing,
                   path: currentPath,
                   details:
-                      'Property "$requiredProp" is required because property '
-                      '"${entry.key}" is present.',
+                      'Property "$requiredProp" is required because '
+                      'property "${entry.key}" is present.',
                 ),
               );
             }
@@ -778,7 +791,9 @@ extension SchemaValidation on Schema {
         ValidationError(
           ValidationErrorType.minItemsNotMet,
           path: currentPath,
-          details: 'List has ${data.length} items, but must have at least $min',
+          details:
+              'List has ${data.length} items, but must have at '
+              'least $min',
         ),
       );
     }
@@ -789,7 +804,8 @@ extension SchemaValidation on Schema {
           ValidationErrorType.maxItemsExceeded,
           path: currentPath,
           details:
-              'List has ${data.length} items, but must have less than $max',
+              'List has ${data.length} items, but must have less '
+              'than $max',
         ),
       );
     }
@@ -957,9 +973,11 @@ extension SchemaValidation on Schema {
     for (final scopeSchema in dynamicScope.reversed) {
       if (scopeSchema.$id != null) {
         // This is a schema resource
-        final found = _findDynamicAnchorInSchema(dynamicAnchorName, scopeSchema);
+        final found =
+            _findDynamicAnchorInSchema(dynamicAnchorName, scopeSchema);
         if (found != null) {
-          final resourceUri = context.schemaRegistry.getUriForSchema(scopeSchema);
+          final resourceUri =
+              context.schemaRegistry.getUriForSchema(scopeSchema);
           if (resourceUri != null) {
             final newUri = resourceUri.replace(fragment: dynamicAnchorName);
             return (found, newUri);
@@ -971,20 +989,6 @@ extension SchemaValidation on Schema {
     // If we are here, no matching dynamic anchor was found in the dynamic scope.
     // So we use the initial resolution.
     return initialResolution;
-  }
-
-  Schema? _findDynamicAnchor(String anchorName, List<Schema> dynamicScope) {
-    // Search from the outermost scope inwards.
-    for (final schema in dynamicScope) {
-      if (schema.$id != null) {
-        // This is a schema resource, check for the anchor.
-        final found = _findDynamicAnchorInSchema(anchorName, schema);
-        if (found != null) {
-          return found;
-        }
-      }
-    }
-    return null;
   }
 
   Schema? _findDynamicAnchorInSchema(String anchorName, Schema schema) {

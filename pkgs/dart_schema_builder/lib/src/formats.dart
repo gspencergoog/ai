@@ -17,7 +17,7 @@ final Map<String, FormatValidator> formatValidators = {
   },
   'date': (value) {
     try {
-      DateFormat("yyyy-MM-dd").parseStrict(value);
+      DateFormat('yyyy-MM-dd').parseStrict(value);
       return true;
     } catch (e) {
       return false;
@@ -25,7 +25,7 @@ final Map<String, FormatValidator> formatValidators = {
   },
   'time': (value) {
     try {
-      DateFormat("HH:mm:ss").parseStrict(value);
+      DateFormat('HH:mm:ss').parseStrict(value);
       return true;
     } catch (e) {
       return false;

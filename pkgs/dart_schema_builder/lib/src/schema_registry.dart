@@ -12,7 +12,7 @@ class SchemaRegistry {
   final Map<Uri, Schema> _schemas = {};
 
   SchemaRegistry({SchemaCache? schemaCache})
-      : _schemaCache = schemaCache ?? SchemaCache();
+    : _schemaCache = schemaCache ?? SchemaCache();
 
   void addSchema(Uri uri, Schema schema) {
     final uriWithoutFragment = uri.removeFragment();
@@ -70,7 +70,7 @@ class SchemaRegistry {
       'properties',
       'patternProperties',
       'dependentSchemas',
-      '\$defs'
+      '\$defs',
     ];
     for (final keyword in mapOfSchemasKeywords) {
       if (schema.value[keyword] case final Map map?) {
@@ -93,7 +93,7 @@ class SchemaRegistry {
       'not',
       'if',
       'then',
-      'else'
+      'else',
     ];
     for (final keyword in schemaKeywords) {
       if (schema.value[keyword] case final Map<String, Object?> map) {

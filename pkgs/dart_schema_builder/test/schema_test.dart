@@ -17,12 +17,16 @@ void main() {
     String? reason,
     bool strictFormat = false,
   }) async {
-    final actualErrors = await schema.validate(data, strictFormat: strictFormat);
+    final actualErrors = await schema.validate(
+      data,
+      strictFormat: strictFormat,
+    );
     final actualErrorTypes = actualErrors.map((e) => e.error).toSet();
     expect(
       actualErrorTypes,
       equals(expectedErrorTypes.toSet()),
-      reason: reason ??
+      reason:
+          reason ??
           'Data: $data. Expected (types): $expectedErrorTypes. Actual (types): $actualErrorTypes',
     );
   }
@@ -35,16 +39,22 @@ void main() {
     String? reason,
     bool strictFormat = false,
   }) async {
-    final actualErrors = await schema.validate(data, strictFormat: strictFormat);
-    final actualErrorStrings =
-        actualErrors.map((e) => e.toErrorString()).toSet();
-    final expectedErrorStrings =
-        expectedErrorsWithPaths.map((e) => e.toErrorString()).toSet();
+    final actualErrors = await schema.validate(
+      data,
+      strictFormat: strictFormat,
+    );
+    final actualErrorStrings = actualErrors
+        .map((e) => e.toErrorString())
+        .toSet();
+    final expectedErrorStrings = expectedErrorsWithPaths
+        .map((e) => e.toErrorString())
+        .toSet();
 
     expect(
       actualErrorStrings,
       equals(expectedErrorStrings),
-      reason: reason ??
+      reason:
+          reason ??
           'Data: $data. Expected (exact): $expectedErrorStrings. Actual (exact): $actualErrorStrings',
     );
   }
@@ -53,11 +63,11 @@ void main() {
     test('ObjectSchema with new keywords', () {
       final schema = ObjectSchema(
         dependentRequired: {
-          'credit_card': ['billing_address']
+          'credit_card': ['billing_address'],
         },
       );
       expect(schema['dependentRequired'], {
-        'credit_card': ['billing_address']
+        'credit_card': ['billing_address'],
       });
     });
 
@@ -98,21 +108,32 @@ void main() {
 
     test('`const` with complex object', () {
       final schema = Schema.fromMap({
-        'const': {'foo': 'bar', 'baz': [1, 2]}
+        'const': {
+          'foo': 'bar',
+          'baz': [1, 2],
+        },
       });
-      expectFailuresMatch(schema, {'foo': 'bar'}, [ValidationErrorType.constMismatch]);
+      expectFailuresMatch(
+        schema,
+        {'foo': 'bar'},
+        [ValidationErrorType.constMismatch],
+      );
       expectFailuresMatch(schema, {
         'foo': 'bar',
-        'baz': [1, 2]
+        'baz': [1, 2],
       }, []);
     });
 
     test('`enum` keyword with various types', () {
       final schema = Schema.fromMap({
-        'enum': ['red', 42, true, null]
+        'enum': ['red', 42, true, null],
       });
-      expectFailuresMatch(schema, 'blue', [ValidationErrorType.enumValueNotAllowed]);
-      expectFailuresMatch(schema, 24, [ValidationErrorType.enumValueNotAllowed]);
+      expectFailuresMatch(schema, 'blue', [
+        ValidationErrorType.enumValueNotAllowed,
+      ]);
+      expectFailuresMatch(schema, 24, [
+        ValidationErrorType.enumValueNotAllowed,
+      ]);
       expectFailuresMatch(schema, 'red', []);
       expectFailuresMatch(schema, 42, []);
       expectFailuresMatch(schema, true, []);
@@ -121,7 +142,7 @@ void main() {
 
     test('`type` keyword with a list of types', () {
       final schema = Schema.fromMap({
-        'type': ['string', 'number']
+        'type': ['string', 'number'],
       });
       expectFailuresMatch(schema, true, [ValidationErrorType.typeMismatch]);
       expectFailuresMatch(schema, 'hello', []);
@@ -132,73 +153,129 @@ void main() {
   group('String Format Validation', () {
     test('format: date-time', () {
       final schema = StringSchema(format: 'date-time');
-      expectFailuresMatch(schema, '2025-07-29T12:34:56Z', [], strictFormat: true);
-      expectFailuresMatch(schema, '2025-07-29T12:34:56.123Z', [],
-          strictFormat: true);
-      expectFailuresMatch(schema, '2025-07-29T12:34:56+01:00', [],
-          strictFormat: true);
       expectFailuresMatch(
-          schema, 'not-a-date', [ValidationErrorType.formatInvalid],
-          strictFormat: true);
+        schema,
+        '2025-07-29T12:34:56Z',
+        [],
+        strictFormat: true,
+      );
+      expectFailuresMatch(
+        schema,
+        '2025-07-29T12:34:56.123Z',
+        [],
+        strictFormat: true,
+      );
+      expectFailuresMatch(
+        schema,
+        '2025-07-29T12:34:56+01:00',
+        [],
+        strictFormat: true,
+      );
+      expectFailuresMatch(schema, 'not-a-date', [
+        ValidationErrorType.formatInvalid,
+      ], strictFormat: true);
     });
 
     test('format: email', () {
       final schema = StringSchema(format: 'email');
       expectFailuresMatch(schema, 'test@example.com', [], strictFormat: true);
-      expectFailuresMatch(
-          schema, 'not-an-email', [ValidationErrorType.formatInvalid],
-          strictFormat: true);
+      expectFailuresMatch(schema, 'not-an-email', [
+        ValidationErrorType.formatInvalid,
+      ], strictFormat: true);
     });
 
     test('format: ipv4', () {
       final schema = StringSchema(format: 'ipv4');
       expectFailuresMatch(schema, '192.168.1.1', [], strictFormat: true);
-      expectFailuresMatch(
-          schema, '256.0.0.1', [ValidationErrorType.formatInvalid],
-          strictFormat: true);
-      expectFailuresMatch(
-          schema, '1.2.3.4.5', [ValidationErrorType.formatInvalid],
-          strictFormat: true);
+      expectFailuresMatch(schema, '256.0.0.1', [
+        ValidationErrorType.formatInvalid,
+      ], strictFormat: true);
+      expectFailuresMatch(schema, '1.2.3.4.5', [
+        ValidationErrorType.formatInvalid,
+      ], strictFormat: true);
     });
   });
 
   group('Conditional Validation', () {
     test('if/then validation', () {
       final schema = Schema.combined(
-        ifSchema: ObjectSchema(properties: {'country': StringSchema(constValue: 'USA')}),
-        thenSchema: ObjectSchema(properties: {'zip_code': StringSchema(pattern: r'^\d{5}$')}),
+        ifSchema: ObjectSchema(
+          properties: {'country': StringSchema(constValue: 'USA')},
+        ),
+        thenSchema: ObjectSchema(
+          properties: {'zip_code': StringSchema(pattern: r'^\d{5}$')},
+        ),
       );
       // If matches, then must match
-      expectFailuresMatch(schema, {'country': 'USA', 'zip_code': 'abcde'}, [ValidationErrorType.patternMismatch]);
+      expectFailuresMatch(
+        schema,
+        {'country': 'USA', 'zip_code': 'abcde'},
+        [ValidationErrorType.patternMismatch],
+      );
       // If matches, then does match
       expectFailuresMatch(schema, {'country': 'USA', 'zip_code': '12345'}, []);
       // If does not match, then is ignored
-      expectFailuresMatch(schema, {'country': 'Canada', 'zip_code': 'abcde'}, []);
+      expectFailuresMatch(schema, {
+        'country': 'Canada',
+        'zip_code': 'abcde',
+      }, []);
     });
 
     test('if/else validation', () {
       final schema = Schema.combined(
-        ifSchema: ObjectSchema(properties: {'country': StringSchema(constValue: 'USA')}),
-        elseSchema: ObjectSchema(properties: {'zip_code': StringSchema(pattern: r'^[A-Z]\d[A-Z] \d[A-Z]\d$')}),
+        ifSchema: ObjectSchema(
+          properties: {'country': StringSchema(constValue: 'USA')},
+        ),
+        elseSchema: ObjectSchema(
+          properties: {
+            'zip_code': StringSchema(pattern: r'^[A-Z]\d[A-Z] \d[A-Z]\d$'),
+          },
+        ),
       );
       // If matches, else is ignored
-      expectFailuresMatch(schema, {'country': 'USA', 'zip_code': 'not-a-canadian-postal-code'}, []);
+      expectFailuresMatch(schema, {
+        'country': 'USA',
+        'zip_code': 'not-a-canadian-postal-code',
+      }, []);
       // If does not match, else must match
-      expectFailuresMatch(schema, {'country': 'Canada', 'zip_code': '12345'}, [ValidationErrorType.patternMismatch]);
+      expectFailuresMatch(
+        schema,
+        {'country': 'Canada', 'zip_code': '12345'},
+        [ValidationErrorType.patternMismatch],
+      );
       // If does not match, else does match
-      expectFailuresMatch(schema, {'country': 'Canada', 'zip_code': 'K1A 0B1'}, []);
+      expectFailuresMatch(schema, {
+        'country': 'Canada',
+        'zip_code': 'K1A 0B1',
+      }, []);
     });
 
     test('if/then/else validation', () {
       final schema = Schema.combined(
-        ifSchema: ObjectSchema(properties: {'country': StringSchema(constValue: 'USA')}),
-        thenSchema: ObjectSchema(properties: {'zip_code': StringSchema(pattern: r'^\d{5}$')}),
-        elseSchema: ObjectSchema(properties: {'zip_code': StringSchema(pattern: r'^[A-Z]\d[A-Z] \d[A-Z]\d$')}),
+        ifSchema: ObjectSchema(
+          properties: {'country': StringSchema(constValue: 'USA')},
+        ),
+        thenSchema: ObjectSchema(
+          properties: {'zip_code': StringSchema(pattern: r'^\d{5}$')},
+        ),
+        elseSchema: ObjectSchema(
+          properties: {
+            'zip_code': StringSchema(pattern: r'^[A-Z]\d[A-Z] \d[A-Z]\d$'),
+          },
+        ),
       );
       // If matches, then fails
-      expectFailuresMatch(schema, {'country': 'USA', 'zip_code': 'K1A 0B1'}, [ValidationErrorType.patternMismatch]);
+      expectFailuresMatch(
+        schema,
+        {'country': 'USA', 'zip_code': 'K1A 0B1'},
+        [ValidationErrorType.patternMismatch],
+      );
       // If does not match, else fails
-      expectFailuresMatch(schema, {'country': 'Canada', 'zip_code': '12345'}, [ValidationErrorType.patternMismatch]);
+      expectFailuresMatch(
+        schema,
+        {'country': 'Canada', 'zip_code': '12345'},
+        [ValidationErrorType.patternMismatch],
+      );
     });
   });
 
@@ -210,9 +287,16 @@ void main() {
         },
       );
       // Dependency key is present, required key is missing
-      expectFailuresMatch(schema, {'credit_card': '1234-5678-9012-3456'}, [ValidationErrorType.dependentRequiredMissing]);
+      expectFailuresMatch(
+        schema,
+        {'credit_card': '1234-5678-9012-3456'},
+        [ValidationErrorType.dependentRequiredMissing],
+      );
       // Dependency key is present, required key is present
-      expectFailuresMatch(schema, {'credit_card': '1234-5678-9012-3456', 'billing_address': '...'}, []);
+      expectFailuresMatch(schema, {
+        'credit_card': '1234-5678-9012-3456',
+        'billing_address': '...',
+      }, []);
       // Dependency key is not present, so validation is skipped
       expectFailuresMatch(schema, {'name': 'John Doe'}, []);
     });
@@ -221,25 +305,47 @@ void main() {
   group('List Contains Validation', () {
     test('`contains` keyword validation', () {
       final schema = ListSchema(contains: IntegerSchema(minimum: 5));
-      expectFailuresMatch(schema, [1, 2, 3, 4], [ValidationErrorType.containsInvalid]);
+      expectFailuresMatch(
+        schema,
+        [1, 2, 3, 4],
+        [ValidationErrorType.containsInvalid],
+      );
       expectFailuresMatch(schema, [1, 2, 3, 4, 5], []);
     });
 
     test('`minContains` keyword validation', () {
-      final schema = ListSchema(contains: IntegerSchema(minimum: 5), minContains: 2);
-      expectFailuresMatch(schema, [1, 6, 3, 4], [ValidationErrorType.minContainsNotMet]);
+      final schema = ListSchema(
+        contains: IntegerSchema(minimum: 5),
+        minContains: 2,
+      );
+      expectFailuresMatch(
+        schema,
+        [1, 6, 3, 4],
+        [ValidationErrorType.minContainsNotMet],
+      );
       expectFailuresMatch(schema, [1, 6, 3, 7], []);
     });
 
     test('`maxContains` keyword validation', () {
-      final schema = ListSchema(contains: IntegerSchema(minimum: 5), maxContains: 1);
-      expectFailuresMatch(schema, [6, 7, 3, 4], [ValidationErrorType.maxContainsExceeded]);
+      final schema = ListSchema(
+        contains: IntegerSchema(minimum: 5),
+        maxContains: 1,
+      );
+      expectFailuresMatch(
+        schema,
+        [6, 7, 3, 4],
+        [ValidationErrorType.maxContainsExceeded],
+      );
       expectFailuresMatch(schema, [1, 6, 3, 4], []);
     });
 
     test('`contains` without `minContains` defaults to 1', () {
       final schema = ListSchema(contains: IntegerSchema(minimum: 5));
-      expectFailuresMatch(schema, [1, 2, 3], [ValidationErrorType.containsInvalid]);
+      expectFailuresMatch(
+        schema,
+        [1, 2, 3],
+        [ValidationErrorType.containsInvalid],
+      );
     });
   });
 
@@ -257,18 +363,20 @@ void main() {
       expectFailuresExact(
         schema,
         {
-          'shipping': {'address': '123 Main St'}
+          'shipping': {'address': '123 Main St'},
         },
         [
           ValidationError(
             ValidationErrorType.dependentRequiredMissing,
             path: ['shipping'],
-            details: 'Property "city" is required because property "address" is present.',
+            details:
+                'Property "city" is required because property "address" is present.',
           ),
           ValidationError(
             ValidationErrorType.dependentRequiredMissing,
             path: ['shipping'],
-            details: 'Property "state" is required because property "address" is present.',
+            details:
+                'Property "state" is required because property "address" is present.',
           ),
         ],
       );
@@ -276,15 +384,12 @@ void main() {
 
     test('minContains with correct path', () {
       final schema = ListSchema(
-        items: ListSchema(
-          contains: IntegerSchema(minimum: 10),
-          minContains: 2,
-        ),
+        items: ListSchema(contains: IntegerSchema(minimum: 10), minContains: 2),
       );
       expectFailuresExact(
         schema,
         [
-          [5, 15, 2]
+          [5, 15, 2],
         ],
         [
           ValidationError(

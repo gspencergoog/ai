@@ -6,12 +6,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dart_schema_builder/dart_schema_builder.dart';
+import 'package:dart_schema_builder/src/schema_registry.dart';
 import 'package:test/test.dart';
 
 void main() {
   final testSuiteDir = Directory(
     'test/JSON-Schema-Test-Suite/tests/draft2020-12',
   );
+  final remoteDir = Directory('test/JSON-Schema-Test-Suite/remotes');
 
   // Optional tests are not required to pass for full compliance.
   final optionalTestSuiteDir = Directory('${testSuiteDir.path}/optional');
@@ -35,11 +37,29 @@ void main() {
   // TODO(gspencer): Re-enable all tests.
   // Limit to just a few tests to make it easier to debug.
   testFilePaths = testFilePaths
-      .where((path) =>
-          // TODO(gspencer): Re-enable all tests.
-          // Failing tests, disabled for now.
-          !path.endsWith('refRemote.json'))
+      .where(
+        (path) =>
+            // TODO(gspencer): Re-enable all tests.
+            // Failing tests, disabled for now.
+            !path.endsWith('refRemote.json'),
+      )
       .toSet();
+
+  final schemaRegistry = SchemaRegistry();
+  final remoteFiles = remoteDir
+      .listSync(recursive: true)
+      .where((entity) => entity is File && entity.path.endsWith('.json'))
+      .cast<File>();
+
+  for (final file in remoteFiles) {
+    final content = file.readAsStringSync();
+    final data = jsonDecode(content);
+    final schema = Schema.fromMap(data as Map<String, Object?>);
+    final uri = Uri.parse(
+      'http://localhost:1234/${file.path.substring(file.path.indexOf('remotes/') + 8)}',
+    );
+    schemaRegistry.addSchema(uri, schema);
+  }
 
   for (final file in testFilePaths.map(File.new)) {
     final content = file.readAsStringSync();
@@ -68,7 +88,11 @@ void main() {
           final expectedValidity = testCase['valid'] as bool;
 
           test(testDescription, () async {
-            final errors = await schema.validate(data, sourceUri: file.uri);
+            final errors = await schema.validate(
+              data,
+              sourceUri: file.uri,
+              schemaRegistry: schemaRegistry,
+            );
             if (expectedValidity) {
               final errorString = errors
                   .map<String>((ValidationError e) => e.toErrorString())
