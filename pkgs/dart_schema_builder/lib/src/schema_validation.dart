@@ -57,8 +57,9 @@ Future<ValidationResult> validateSubSchema(
   List<String> currentPath,
   ValidationContext context,
   List<Schema> dynamicScope,
-  LoggingContext? loggingContext,
-) async {
+  LoggingContext? loggingContext, {
+  AnnotationSet? initialAnnotations,
+}) async {
   if (schema is bool) {
     if (schema == false) {
       return ValidationResult.failure([
@@ -75,7 +76,8 @@ Future<ValidationResult> validateSubSchema(
   if (schema is Map) {
     return await Schema.fromMap(
       schema.cast<String, Object?>(),
-    ).validateSchema(data, currentPath, context, dynamicScope, loggingContext);
+    ).validateSchema(data, currentPath, context, dynamicScope, loggingContext,
+        initialAnnotations: initialAnnotations);
   }
   // This should not happen for a valid schema file.
   return ValidationResult.success(AnnotationSet.empty());
@@ -151,8 +153,9 @@ extension SchemaValidation on Schema {
     List<String> currentPath,
     ValidationContext context,
     List<Schema> dynamicScope,
-    LoggingContext? loggingContext,
-  ) async {
+    LoggingContext? loggingContext, {
+    AnnotationSet? initialAnnotations,
+  }) async {
     var currentContext = context;
     if ($id != null) {
       final newUri = context.sourceUri!.resolve($id!);
@@ -165,7 +168,7 @@ extension SchemaValidation on Schema {
     );
     final newDynamicScope = [...dynamicScope, this];
     final errors = <ValidationError>[];
-    var allAnnotations = AnnotationSet.empty();
+    var allAnnotations = initialAnnotations ?? AnnotationSet.empty();
 
     if ($dynamicRef case final ref?) {
       final resolution = await resolveDynamicRef(
@@ -224,6 +227,7 @@ extension SchemaValidation on Schema {
             currentContext,
             newDynamicScope,
             loggingContext,
+            initialAnnotations: allAnnotations,
           );
           errors.addAll(siblingResult.errors);
           allAnnotations = allAnnotations.merge(siblingResult.annotations);
@@ -260,6 +264,7 @@ extension SchemaValidation on Schema {
             currentContext,
             newDynamicScope,
             loggingContext,
+            initialAnnotations: allAnnotations,
           );
           errors.addAll(thenResult.errors);
           allAnnotations = allAnnotations.merge(thenResult.annotations);
@@ -273,6 +278,7 @@ extension SchemaValidation on Schema {
             currentContext,
             newDynamicScope,
             loggingContext,
+            initialAnnotations: allAnnotations,
           );
           errors.addAll(elseResult.errors);
           allAnnotations = allAnnotations.merge(elseResult.annotations);
@@ -291,6 +297,7 @@ extension SchemaValidation on Schema {
           currentContext,
           newDynamicScope,
           loggingContext,
+          initialAnnotations: allAnnotations,
         );
         errors.addAll(result.errors);
         allOfAnnotations.add(result.annotations);
@@ -310,6 +317,7 @@ extension SchemaValidation on Schema {
           currentContext,
           newDynamicScope,
           loggingContext,
+          initialAnnotations: allAnnotations,
         );
         if (result.isValid) {
           passedCount++;
@@ -338,6 +346,7 @@ extension SchemaValidation on Schema {
           currentContext,
           newDynamicScope,
           loggingContext,
+          initialAnnotations: allAnnotations,
         );
         if (result.isValid) {
           passedCount++;
@@ -1032,8 +1041,9 @@ extension SchemaValidation on Schema {
       return initialResolution;
     }
 
-    (Schema, Uri)? foundResolution;
     // It has a dynamic anchor, so we need to search the dynamic scope.
+    // The dynamic scope is a list where the first element is the outermost.
+    // We should search from outermost to innermost.
     for (final scopeSchema in dynamicScope) {
       if (scopeSchema.$id != null) {
         // This is a schema resource
@@ -1044,13 +1054,14 @@ extension SchemaValidation on Schema {
           );
           if (resourceUri != null) {
             final newUri = resourceUri.replace(fragment: fragment);
-            foundResolution = (found, newUri);
+            // Found the outermost, so we can use it.
+            return (found, newUri);
           }
         }
       }
     }
 
-    return foundResolution ?? initialResolution;
+    return initialResolution;
   }
 
   Schema? _findDynamicAnchorInSchema(String anchorName, Schema schema) {
