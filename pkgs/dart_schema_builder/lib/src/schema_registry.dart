@@ -6,13 +6,14 @@ import 'dart:async';
 
 import 'schema.dart';
 import 'schema_cache.dart';
+import 'utils.dart';
 
 class SchemaRegistry {
   final SchemaCache _schemaCache;
   final Map<Uri, Schema> _schemas = {};
 
   SchemaRegistry({SchemaCache? schemaCache})
-    : _schemaCache = schemaCache ?? SchemaCache();
+      : _schemaCache = schemaCache ?? SchemaCache();
 
   void addSchema(Uri uri, Schema schema) {
     final uriWithoutFragment = uri.removeFragment();
@@ -38,7 +39,7 @@ class SchemaRegistry {
 
   Uri? getUriForSchema(Schema schema) {
     for (final entry in _schemas.entries) {
-      if (entry.value == schema) {
+      if (deepEquals(entry.value.value, schema.value)) {
         return entry.key;
       }
     }

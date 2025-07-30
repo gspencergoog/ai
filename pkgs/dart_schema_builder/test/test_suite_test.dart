@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dart_schema_builder/dart_schema_builder.dart';
+import 'package:dart_schema_builder/src/logging_context.dart';
 import 'package:dart_schema_builder/src/schema_registry.dart';
 import 'package:test/test.dart';
 
@@ -88,10 +89,12 @@ void main() {
           final expectedValidity = testCase['valid'] as bool;
 
           test(testDescription, () async {
+            final loggingContext = LoggingContext(enabled: true);
             final errors = await schema.validate(
               data,
               sourceUri: file.uri,
               schemaRegistry: schemaRegistry,
+              loggingContext: loggingContext,
             );
             if (expectedValidity) {
               final errorString = errors
@@ -102,13 +105,15 @@ void main() {
                 isEmpty,
                 reason:
                     'Expected data to be valid, but got errors: '
-                    '$errorString',
+                    '$errorString\nLog:\n${loggingContext.buffer}',
               );
             } else {
               expect(
                 errors,
                 isNotEmpty,
-                reason: 'Expected data to be invalid, but it was valid.',
+                reason:
+                    'Expected data to be invalid, but it was valid.\n'
+                    'Log:\n${loggingContext.buffer}',
               );
             }
           });
