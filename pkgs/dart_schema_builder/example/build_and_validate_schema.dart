@@ -4,7 +4,7 @@
 
 import 'package:dart_schema_builder/dart_schema_builder.dart';
 
-void main() {
+Future<void> main() async {
   // This example demonstrates how to build a complex, interesting schema to
   // validate a "System Event". Our system can have different types of events,
   // and we want to ensure that the data for each event is structured correctly.
@@ -113,7 +113,7 @@ void main() {
     'eventType': 'user_login',
     'payload': {'userId': 'user-123', 'ipAddress': '192.168.1.1'},
   };
-  validateAndPrintResults(systemEventSchema, validLoginEvent);
+  await validateAndPrintResults(systemEventSchema, validLoginEvent);
 
   print('\n--- 2. Validating a Correct File Upload Event ---');
   final validFileUploadEvent = {
@@ -132,7 +132,7 @@ void main() {
       ],
     },
   };
-  validateAndPrintResults(systemEventSchema, validFileUploadEvent);
+  await validateAndPrintResults(systemEventSchema, validFileUploadEvent);
 
   print('\n--- 3. Validating an Invalid Event (Multiple Errors) ---');
   final invalidEvent = {
@@ -145,7 +145,7 @@ void main() {
       'reason': 'user initiated',
     },
   };
-  validateAndPrintResults(systemEventSchema, invalidEvent);
+  await validateAndPrintResults(systemEventSchema, invalidEvent);
 
   print('\n--- 4. Validating an Invalid Login Event Payload ---');
   final invalidLoginPayload = {
@@ -158,13 +158,16 @@ void main() {
       'extraField': 'this is not allowed', // Fails additionalProperties
     },
   };
-  validateAndPrintResults(systemEventSchema, invalidLoginPayload);
+  await validateAndPrintResults(systemEventSchema, invalidLoginPayload);
 }
 
 /// Helper function to run validation and print the results in a friendly
 /// format.
-void validateAndPrintResults(Schema schema, Map<String, Object?> data) {
-  final errors = schema.validate(data);
+Future<void> validateAndPrintResults(
+  Schema schema,
+  Map<String, Object?> data,
+) async {
+  final errors = await schema.validate(data);
 
   if (errors.isEmpty) {
     print('✅ Success! The data is valid.');

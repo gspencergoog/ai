@@ -100,8 +100,8 @@ void main() {
           final data = testCase['data'];
           final expectedValidity = testCase['valid'] as bool;
 
-          test(testDescription, () {
-            final errors = schema.validate(data, sourceUri: file.uri);
+          test(testDescription, () async {
+            final errors = await schema.validate(data, sourceUri: file.uri);
             if (expectedValidity) {
               final errorString = errors
                   .map<String>((ValidationError e) => e?.toErrorString() ?? '')

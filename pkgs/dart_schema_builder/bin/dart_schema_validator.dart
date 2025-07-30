@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:dart_schema_builder/dart_schema_builder.dart';
 
-void main(List<String> arguments) {
+Future<void> main(List<String> arguments) async {
   final parser = ArgParser()..addOption('schema', abbr: 's', mandatory: true);
   final argResults = parser.parse(arguments);
 
@@ -34,7 +34,7 @@ void main(List<String> arguments) {
     final fileContent = file.readAsStringSync();
     final jsonData = jsonDecode(fileContent);
 
-    final errors = schema.validate(jsonData);
+    final errors = await schema.validate(jsonData);
 
     if (errors.isEmpty) {
       print('  SUCCESS: ${file.path} is valid.');

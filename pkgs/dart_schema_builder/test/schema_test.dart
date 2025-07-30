@@ -16,8 +16,8 @@ void main() {
     List<ValidationErrorType> expectedErrorTypes, {
     String? reason,
     bool strictFormat = false,
-  }) {
-    final actualErrors = schema.validate(data, strictFormat: strictFormat);
+  }) async {
+    final actualErrors = await schema.validate(data, strictFormat: strictFormat);
     final actualErrorTypes = actualErrors.map((e) => e.error).toSet();
     expect(
       actualErrorTypes,
@@ -34,8 +34,8 @@ void main() {
     List<ValidationError> expectedErrorsWithPaths, {
     String? reason,
     bool strictFormat = false,
-  }) {
-    final actualErrors = schema.validate(data, strictFormat: strictFormat);
+  }) async {
+    final actualErrors = await schema.validate(data, strictFormat: strictFormat);
     final actualErrorStrings =
         actualErrors.map((e) => e.toErrorString()).toSet();
     final expectedErrorStrings =
