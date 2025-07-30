@@ -180,8 +180,13 @@ extension SchemaValidation on Schema {
   }) async {
     var currentContext = context;
     if ($id != null) {
-      final newUri = context.sourceUri!.resolve($id!);
-      currentContext = context.withSourceUri(newUri);
+      // This is a heuristic to avoid re-resolving a relative path that has
+      // already been applied to the base URI.
+      if (!($id!.endsWith('/') &&
+          context.sourceUri!.path.endsWith('/${$id}'))) {
+        final newUri = context.sourceUri!.resolve($id!);
+        currentContext = context.withSourceUri(newUri);
+      }
     }
 
     loggingContext?.log(
@@ -224,15 +229,32 @@ extension SchemaValidation on Schema {
       );
       if (resolution case (final referencedSchema, final referencedUri)?) {
         final newContext = currentContext.withSourceUri(referencedUri);
-        final result = await referencedSchema.validateSchema(
+        final refResult = await referencedSchema.validateSchema(
           data,
           currentPath,
           newContext,
           newDynamicScope,
           loggingContext,
         );
-        allAnnotations = allAnnotations.merge(result.annotations);
-        return result;
+        errors.addAll(refResult.errors);
+        allAnnotations = allAnnotations.merge(refResult.annotations);
+
+        final siblingSchemaMap = {...value};
+        siblingSchemaMap.remove(kDynamicRef);
+        if (siblingSchemaMap.isNotEmpty) {
+          final siblingSchema = Schema.fromMap(siblingSchemaMap);
+          final siblingResult = await siblingSchema.validateSchema(
+            data,
+            currentPath,
+            currentContext,
+            newDynamicScope,
+            loggingContext,
+            initialAnnotations: allAnnotations,
+          );
+          errors.addAll(siblingResult.errors);
+          allAnnotations = allAnnotations.merge(siblingResult.annotations);
+        }
+        return ValidationResult.fromErrors(errors, allAnnotations);
       } else {
         return ValidationResult.failure([
           ValidationError(
@@ -368,7 +390,6 @@ extension SchemaValidation on Schema {
           currentContext,
           newDynamicScope,
           loggingContext,
-          initialAnnotations: allAnnotations,
         );
         if (result.isValid) {
           passedCount++;
@@ -396,7 +417,6 @@ extension SchemaValidation on Schema {
           currentContext,
           newDynamicScope,
           loggingContext,
-          initialAnnotations: allAnnotations,
         );
         if (result.isValid) {
           passedCount++;
@@ -481,6 +501,7 @@ extension SchemaValidation on Schema {
           'Checking unevaluatedProperties. '
           'Annotations: ${allAnnotations.evaluatedKeys}',
         );
+        final newlyEvaluatedKeys = <String>{};
         for (final dataKey in data.keys) {
           if (!allAnnotations.evaluatedKeys.contains(dataKey)) {
             final newPath = [...currentPath, dataKey];
@@ -502,14 +523,18 @@ extension SchemaValidation on Schema {
                     loggingContext,
                   );
               errors.addAll(result.errors);
-              allAnnotations = allAnnotations.merge(result.annotations);
+              if (result.isValid) {
+                allAnnotations = allAnnotations.merge(result.annotations);
+              }
             }
-            allAnnotations.evaluatedKeys.add(dataKey);
+            newlyEvaluatedKeys.add(dataKey);
           }
         }
+        allAnnotations.evaluatedKeys.addAll(newlyEvaluatedKeys);
       }
     } else if (data is List) {
       if (this[kUnevaluatedItems] case final ui?) {
+        final newlyEvaluatedItems = <int>{};
         for (var i = 0; i < data.length; i++) {
           if (!allAnnotations.evaluatedItems.contains(i)) {
             final newPath = [...currentPath, i.toString()];
@@ -535,8 +560,10 @@ extension SchemaValidation on Schema {
                 allAnnotations = allAnnotations.merge(result.annotations);
               }
             }
+            newlyEvaluatedItems.add(i);
           }
         }
+        allAnnotations.evaluatedItems.addAll(newlyEvaluatedItems);
       }
     }
 
@@ -1148,12 +1175,13 @@ extension SchemaValidation on Schema {
         visited.add(current);
 
         final currentSchema = Schema.fromMap(current);
-        if (currentSchema.$dynamicAnchor == anchorName) {
-          result = currentSchema;
+
+        if (!isRootOfResource && currentSchema.$id != null) {
           return;
         }
 
-        if (!isRootOfResource && currentSchema.$id != null) {
+        if (currentSchema.$dynamicAnchor == anchorName) {
+          result = currentSchema;
           return;
         }
 

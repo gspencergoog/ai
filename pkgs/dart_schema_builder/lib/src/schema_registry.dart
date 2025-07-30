@@ -49,9 +49,15 @@ class SchemaRegistry {
   void _registerIds(Schema schema, Uri baseUri) {
     final id = schema.$id;
     if (id != null) {
-      final newUri = baseUri.resolve(id);
-      _schemas[newUri.removeFragment()] = schema;
-      baseUri = newUri;
+      // This is a heuristic to avoid re-resolving a relative path that has
+      // already been applied to the base URI.
+      if (id.endsWith('/') && baseUri.path.endsWith('/$id')) {
+        _schemas[baseUri.removeFragment()] = schema;
+      } else {
+        final newUri = baseUri.resolve(id);
+        _schemas[newUri.removeFragment()] = schema;
+        baseUri = newUri;
+      }
     }
 
     void recurseOnMap(Map<String, Object?> map) {
@@ -170,13 +176,16 @@ class SchemaRegistry {
         visited.add(current);
 
         final currentSchema = Schema.fromMap(current);
-        if (currentSchema.$anchor == anchorName ||
-            currentSchema.$dynamicAnchor == anchorName) {
-          result = currentSchema;
+
+        if (!isRootOfResource && currentSchema.$id != null) {
+          // This is a new schema resource, so we don't look for anchors for
+          // the parent resource inside it.
           return;
         }
 
-        if (!isRootOfResource && currentSchema.$id != null) {
+        if (currentSchema.$anchor == anchorName ||
+            currentSchema.$dynamicAnchor == anchorName) {
+          result = currentSchema;
           return;
         }
 
