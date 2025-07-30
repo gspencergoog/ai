@@ -163,7 +163,7 @@ class SchemaRegistry {
     Schema? result;
     final visited = <Map<String, Object?>>{};
 
-    void visit(dynamic current) {
+    void visit(dynamic current, {required bool isRootOfResource}) {
       if (result != null) return;
       if (current is Map<String, Object?>) {
         if (visited.contains(current)) return;
@@ -175,17 +175,22 @@ class SchemaRegistry {
           result = currentSchema;
           return;
         }
+
+        if (!isRootOfResource && currentSchema.$id != null) {
+          return;
+        }
+
         for (final value in current.values) {
-          visit(value);
+          visit(value, isRootOfResource: false);
         }
       } else if (current is List) {
         for (final item in current) {
-          visit(item);
+          visit(item, isRootOfResource: false);
         }
       }
     }
 
-    visit(schema.value);
+    visit(schema.value, isRootOfResource: true);
     return result;
   }
 }

@@ -224,13 +224,15 @@ extension SchemaValidation on Schema {
       );
       if (resolution case (final referencedSchema, final referencedUri)?) {
         final newContext = currentContext.withSourceUri(referencedUri);
-        return await referencedSchema.validateSchema(
+        final result = await referencedSchema.validateSchema(
           data,
           currentPath,
           newContext,
           newDynamicScope,
           loggingContext,
         );
+        allAnnotations = allAnnotations.merge(result.annotations);
+        return result;
       } else {
         return ValidationResult.failure([
           ValidationError(
@@ -300,8 +302,8 @@ extension SchemaValidation on Schema {
         newDynamicScope,
         loggingContext,
       );
-      allAnnotations = allAnnotations.merge(ifResult.annotations);
       if (ifResult.isValid) {
+        allAnnotations = allAnnotations.merge(ifResult.annotations);
         if (thenSchema case final thenS?) {
           final thenResult = await validateSubSchema(
             thenS,
@@ -310,10 +312,11 @@ extension SchemaValidation on Schema {
             currentContext,
             newDynamicScope,
             loggingContext,
-            initialAnnotations: allAnnotations,
           );
           errors.addAll(thenResult.errors);
-          allAnnotations = allAnnotations.merge(thenResult.annotations);
+          if (thenResult.isValid) {
+            allAnnotations = allAnnotations.merge(thenResult.annotations);
+          }
         }
       } else {
         if (elseSchema case final elseS?) {
@@ -324,10 +327,11 @@ extension SchemaValidation on Schema {
             currentContext,
             newDynamicScope,
             loggingContext,
-            initialAnnotations: allAnnotations,
           );
           errors.addAll(elseResult.errors);
-          allAnnotations = allAnnotations.merge(elseResult.annotations);
+          if (elseResult.isValid) {
+            allAnnotations = allAnnotations.merge(elseResult.annotations);
+          }
         }
       }
     }
@@ -343,10 +347,11 @@ extension SchemaValidation on Schema {
           currentContext,
           newDynamicScope,
           loggingContext,
-          initialAnnotations: allAnnotations,
         );
         errors.addAll(result.errors);
-        allOfAnnotations.add(result.annotations);
+        if (result.isValid) {
+          allOfAnnotations.add(result.annotations);
+        }
       }
       allAnnotations = allAnnotations.mergeAll(allOfAnnotations);
     }
@@ -376,9 +381,8 @@ extension SchemaValidation on Schema {
         errors.add(
           ValidationError(ValidationErrorType.anyOfNotMet, path: currentPath),
         );
-      } else {
-        allAnnotations = allAnnotations.mergeAll(anyOfAnnotations);
       }
+      allAnnotations = allAnnotations.mergeAll(anyOfAnnotations);
     }
 
     if (oneOf case final List oneOfList?) {
@@ -517,8 +521,9 @@ extension SchemaValidation on Schema {
                   details: 'Unevaluated item in list at index $i',
                 ),
               );
-            } else if (ui is Schema) {
-              final result = await (ui as Schema).validateSchema(
+            } else if (ui is Map) {
+              final result = await Schema.fromMap(ui.cast<String, Object?>())
+                  .validateSchema(
                 data[i],
                 newPath,
                 currentContext,
@@ -526,7 +531,9 @@ extension SchemaValidation on Schema {
                 loggingContext,
               );
               errors.addAll(result.errors);
-              allAnnotations = allAnnotations.merge(result.annotations);
+              if (result.isValid) {
+                allAnnotations = allAnnotations.merge(result.annotations);
+              }
             }
           }
         }
