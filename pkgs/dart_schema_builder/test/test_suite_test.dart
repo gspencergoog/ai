@@ -42,7 +42,6 @@ void main() {
           !path.endsWith('refRemote.json') &&
           !path.endsWith('dynamicRef.json') &&
           !path.endsWith('unevaluatedItems.json') &&
-          !path.endsWith('unevaluatedProperties.json') &&
           // Passing tests.
           (path.endsWith('allOf.json') ||
               path.endsWith('anyOf.json') ||
@@ -76,7 +75,8 @@ void main() {
               path.endsWith('properties.json') ||
               path.endsWith('propertyNames.json') ||
               path.endsWith('required.json') ||
-              path.endsWith('type.json')))
+              path.endsWith('type.json') ||
+              path.endsWith('unevaluatedProperties.json')))
       .toSet();
 
   for (final file in testFilePaths.map(File.new)) {

@@ -22,13 +22,15 @@ class ValidationContext {
   final List<Schema> dynamicScope;
   final Uri? sourceUri;
   final SchemaRegistry schemaRegistry;
+  final Set<String> evaluatedKeys;
 
   ValidationContext(
     this.rootSchema, {
     this.strictFormat = false,
     this.sourceUri,
     required this.schemaRegistry,
-  }) : dynamicScope = [rootSchema];
+  })  : dynamicScope = [rootSchema],
+        evaluatedKeys = {};
 
   ValidationContext._copyWith({
     required this.rootSchema,
@@ -36,6 +38,7 @@ class ValidationContext {
     required this.dynamicScope,
     required this.sourceUri,
     required this.schemaRegistry,
+    required this.evaluatedKeys,
   });
 
   ValidationContext withSourceUri(Uri newSourceUri) {
@@ -45,6 +48,7 @@ class ValidationContext {
       dynamicScope: dynamicScope,
       sourceUri: newSourceUri,
       schemaRegistry: schemaRegistry,
+      evaluatedKeys: evaluatedKeys,
     );
   }
 }
@@ -252,6 +256,7 @@ extension SchemaValidation on Schema {
 
     if (anyOf case final List anyOfList?) {
       var passedCount = 0;
+      final allAnyOfFailures = <ValidationError>[];
       for (final subSchema in anyOfList) {
         final tempFailures = createHashSet();
         await validateSubSchema(
@@ -263,6 +268,8 @@ extension SchemaValidation on Schema {
         );
         if (tempFailures.isEmpty) {
           passedCount++;
+        } else {
+          allAnyOfFailures.addAll(tempFailures);
         }
       }
       if (passedCount == 0) {
@@ -352,6 +359,35 @@ extension SchemaValidation on Schema {
       accumulatedFailures,
       context,
     );
+
+    // 5. Unevaluated Properties
+    if (data is Map<String, Object?>) {
+      if (this[kUnevaluatedProperties] case final up?) {
+        for (final dataKey in data.keys) {
+          if (!context.evaluatedKeys.contains(dataKey)) {
+            currentPath.add(dataKey);
+            if (up is bool && !up) {
+              accumulatedFailures.add(
+                ValidationError(
+                  ValidationErrorType.unevaluatedPropertyNotAllowed,
+                  path: currentPath,
+                  details: 'Unevaluated property "$dataKey" is not allowed',
+                ),
+              );
+            } else if (up is Map) {
+              await Schema.fromMap(up.cast<String, Object?>()).validateSchema(
+                data[dataKey],
+                currentPath,
+                accumulatedFailures,
+                context,
+              );
+            }
+            context.evaluatedKeys.add(dataKey);
+            currentPath.removeLast();
+          }
+        }
+      }
+    }
     context.dynamicScope.removeLast();
   }
 
@@ -519,7 +555,7 @@ extension SchemaValidation on Schema {
       }
     }
 
-    final evaluatedKeys = <String>{};
+    final evaluatedKeys = context.evaluatedKeys;
     if (objectSchema.properties case final props?) {
       for (final entry in props.entries) {
         if (data.containsKey(entry.key)) {
@@ -607,25 +643,7 @@ extension SchemaValidation on Schema {
           );
         }
         currentPath.removeLast();
-      } else if (objectSchema[kUnevaluatedProperties] case final up?) {
-        currentPath.add(dataKey);
-        if (up is bool && !up) {
-          accumulatedFailures.add(
-            ValidationError(
-              ValidationErrorType.unevaluatedPropertyNotAllowed,
-              path: currentPath,
-              details: 'Unevaluated property "$dataKey" is not allowed',
-            ),
-          );
-        } else if (up is Map) {
-          await Schema.fromMap(up.cast<String, Object?>()).validateSchema(
-            data[dataKey],
-            currentPath,
-            accumulatedFailures,
-            context,
-          );
-        }
-        currentPath.removeLast();
+        evaluatedKeys.add(dataKey);
       }
     }
   }
