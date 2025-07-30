@@ -29,22 +29,11 @@ void main() {
       .where((entity) => entity is File && entity.path.endsWith('.json'))
       .cast<File>();
 
-  var testFilePaths = testFiles.map((f) => f.path).toSet();
+  final testFilePaths = testFiles.map((f) => f.path).toSet();
   final optionalTestFilePaths = optionalTestFiles.map((f) => f.path).toSet();
 
   // Exclude optional tests from the main suite.
   testFilePaths.removeAll(optionalTestFilePaths);
-
-  // TODO(gspencer): Re-enable all tests.
-  // Limit to just a few tests to make it easier to debug.
-  testFilePaths = testFilePaths
-      .where(
-        (path) =>
-            // TODO(gspencer): Re-enable all tests.
-            // Failing tests, disabled for now.
-            !path.endsWith('refRemote.json'),
-      )
-      .toSet();
 
   final schemaRegistry = SchemaRegistry();
   final remoteFiles = remoteDir
@@ -77,11 +66,6 @@ void main() {
       }
 
       group('$groupDescription - ${file.path}', () {
-        if (groupDescription ==
-            "collect annotations inside a 'not', even if collection is "
-                'disabled') {
-          return;
-        }
         final testCases = testGroup['tests'] as List;
         for (final testCase in testCases.cast<Map>()) {
           final testDescription = testCase['description'] as String;
