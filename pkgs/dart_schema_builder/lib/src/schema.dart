@@ -42,6 +42,7 @@ extension type Schema.fromMap(Map<String, Object?> _value) {
     String? $anchor,
     String? $dynamicAnchor,
     String? $id,
+    String? $schema,
 
     // Schema composition
     List<Object?>? allOf,
@@ -76,6 +77,7 @@ extension type Schema.fromMap(Map<String, Object?> _value) {
       if ($ref != null) kRef: $ref,
       if ($dynamicAnchor != null) kDynamicAnchor: $dynamicAnchor,
       if ($id != null) '\$id': $id,
+      if ($schema != null) '\$schema': $schema,
       if (allOf != null) 'allOf': allOf,
       if (anyOf != null) 'anyOf': anyOf,
       if (oneOf != null) 'oneOf': oneOf,
@@ -135,6 +137,7 @@ extension type Schema.fromMap(Map<String, Object?> _value) {
   String? get $anchor => _value[kAnchor] as String?;
   String? get $dynamicAnchor => _value[kDynamicAnchor] as String?;
   String? get $id => _value['\$id'] as String?;
+  String? get $schema => _value['\$schema'] as String?;
 
   // Schema Composition
   List<Object?>? get allOf => (_value['allOf'] as List?)?.cast<Object?>();

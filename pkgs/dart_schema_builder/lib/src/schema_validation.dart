@@ -26,12 +26,22 @@ class ValidationContext {
   final bool strictFormat;
   final Uri? sourceUri;
   final SchemaRegistry schemaRegistry;
+  final Map<String, bool> vocabularies;
 
   ValidationContext(
     this.rootSchema, {
     this.strictFormat = false,
     this.sourceUri,
     required this.schemaRegistry,
+    this.vocabularies = const {
+      'https://json-schema.org/draft/2020-12/vocab/core': true,
+      'https://json-schema.org/draft/2020-12/vocab/applicator': true,
+      'https://json-schema.org/draft/2020-12/vocab/unevaluated': true,
+      'https://json-schema.org/draft/2020-12/vocab/validation': true,
+      'https://json-schema.org/draft/2020-12/vocab/meta-data': true,
+      'https://json-schema.org/draft/2020-12/vocab/format-annotation': true,
+      'https://json-schema.org/draft/2020-12/vocab/content': true,
+    },
   });
 
   ValidationContext._copyWith({
@@ -39,6 +49,7 @@ class ValidationContext {
     required this.strictFormat,
     required this.sourceUri,
     required this.schemaRegistry,
+    required this.vocabularies,
   });
 
   ValidationContext withSourceUri(Uri newSourceUri) {
@@ -47,6 +58,17 @@ class ValidationContext {
       strictFormat: strictFormat,
       sourceUri: newSourceUri,
       schemaRegistry: schemaRegistry,
+      vocabularies: vocabularies,
+    );
+  }
+
+  ValidationContext withVocabularies(Map<String, bool> newVocabularies) {
+    return ValidationContext._copyWith(
+      rootSchema: rootSchema,
+      strictFormat: strictFormat,
+      sourceUri: sourceUri,
+      schemaRegistry: schemaRegistry,
+      vocabularies: newVocabularies,
     );
   }
 }
@@ -169,6 +191,30 @@ extension SchemaValidation on Schema {
     final newDynamicScope = [...dynamicScope, this];
     final errors = <ValidationError>[];
     var allAnnotations = initialAnnotations ?? AnnotationSet.empty();
+
+    if ($schema != null) {
+      final metaSchemaUri = Uri.parse($schema!);
+      final metaSchema =
+          await currentContext.schemaRegistry.resolve(metaSchemaUri);
+      if (metaSchema != null) {
+        final vocabulary = metaSchema.value['\$vocabulary'];
+        if (vocabulary is Map) {
+          currentContext =
+              currentContext.withVocabularies(vocabulary.cast<String, bool>());
+        } else {
+          // If $vocabulary is not present, default to all vocabularies.
+          currentContext = currentContext.withVocabularies(const {
+            'https://json-schema.org/draft/2020-12/vocab/core': true,
+            'https://json-schema.org/draft/2020-12/vocab/applicator': true,
+            'https://json-schema.org/draft/2020-12/vocab/unevaluated': true,
+            'https://json-schema.org/draft/2020-12/vocab/validation': true,
+            'https://json-schema.org/draft/2020-12/vocab/meta-data': true,
+            'https://json-schema.org/draft/2020-12/vocab/format-annotation': true,
+            'https://json-schema.org/draft/2020-12/vocab/content': true,
+          });
+        }
+      }
+    }
 
     if ($dynamicRef case final ref?) {
       final resolution = await resolveDynamicRef(
@@ -552,43 +598,47 @@ extension SchemaValidation on Schema {
         );
       case JsonType.string:
         {
-          final stringSchema = this as StringSchema;
-          if (stringSchema.maxLength case final max?
-              when (data as String).characters.length > max) {
-            errors.add(
-              ValidationError(
-                ValidationErrorType.maxLengthExceeded,
-                path: currentPath,
-                details:
-                    'String length ${data.characters.length} exceeds '
-                    'maximum length of $max',
-              ),
-            );
-          }
-          if (stringSchema.minLength case final min?
-              when (data as String).characters.length < min) {
-            errors.add(
-              ValidationError(
-                ValidationErrorType.minLengthNotMet,
-                path: currentPath,
-                details:
-                    'String length ${data.characters.length} is less '
-                    'than minimum of $min',
-              ),
-            );
-          }
-          if (stringSchema.pattern case final p?) {
-            if (!RegExp(p).hasMatch(data as String)) {
+          if (context.vocabularies[
+                  'https://json-schema.org/draft/2020-12/vocab/validation'] ==
+              true) {
+            final stringSchema = this as StringSchema;
+            if (stringSchema.maxLength case final max?
+                when (data as String).characters.length > max) {
               errors.add(
                 ValidationError(
-                  ValidationErrorType.patternMismatch,
+                  ValidationErrorType.maxLengthExceeded,
                   path: currentPath,
-                  details: 'String does not match pattern "$p"',
+                  details:
+                      'String length ${data.characters.length} exceeds '
+                      'maximum length of $max',
                 ),
               );
             }
+            if (stringSchema.minLength case final min?
+                when (data as String).characters.length < min) {
+              errors.add(
+                ValidationError(
+                  ValidationErrorType.minLengthNotMet,
+                  path: currentPath,
+                  details:
+                      'String length ${data.characters.length} is less '
+                      'than minimum of $min',
+                ),
+              );
+            }
+            if (stringSchema.pattern case final p?) {
+              if (!RegExp(p).hasMatch(data as String)) {
+                errors.add(
+                  ValidationError(
+                    ValidationErrorType.patternMismatch,
+                    path: currentPath,
+                    details: 'String does not match pattern "$p"',
+                  ),
+                );
+              }
+            }
           }
-          if (stringSchema.format case final format?
+          if ((this as StringSchema).format case final format?
               when context.strictFormat) {
             final validator = formatValidators[format];
             if (validator != null && !validator(data as String)) {
@@ -606,57 +656,61 @@ extension SchemaValidation on Schema {
       case JsonType.num:
       case JsonType.int:
         {
-          final numSchema = this as NumberSchema;
-          final numData = data as num;
-          if (numSchema.multipleOf case final mOf?
-              when (Decimal.parse(numData.toString()) %
-                      Decimal.parse(mOf.toString())) !=
-                  Decimal.zero) {
-            errors.add(
-              ValidationError(
-                ValidationErrorType.multipleOfInvalid,
-                path: currentPath,
-                details: '$numData is not a multiple of $mOf',
-              ),
-            );
-          }
-          if (numSchema.maximum case final max? when numData > max) {
-            errors.add(
-              ValidationError(
-                ValidationErrorType.maximumExceeded,
-                path: currentPath,
-                details: '$numData exceeds maximum of $max',
-              ),
-            );
-          }
-          if (numSchema.exclusiveMaximum case final exMax?
-              when numData >= exMax) {
-            errors.add(
-              ValidationError(
-                ValidationErrorType.exclusiveMaximumExceeded,
-                path: currentPath,
-                details: '$numData exceeds exclusive maximum of $exMax',
-              ),
-            );
-          }
-          if (numSchema.minimum case final min? when numData < min) {
-            errors.add(
-              ValidationError(
-                ValidationErrorType.minimumNotMet,
-                path: currentPath,
-                details: '$numData is less than minimum of $min',
-              ),
-            );
-          }
-          if (numSchema.exclusiveMinimum case final exMin?
-              when numData <= exMin) {
-            errors.add(
-              ValidationError(
-                ValidationErrorType.exclusiveMinimumNotMet,
-                path: currentPath,
-                details: '$numData is less than exclusive minimum of $exMin',
-              ),
-            );
+          if (context.vocabularies[
+                  'https://json-schema.org/draft/2020-12/vocab/validation'] ==
+              true) {
+            final numSchema = this as NumberSchema;
+            final numData = data as num;
+            if (numSchema.multipleOf case final mOf?
+                when (Decimal.parse(numData.toString()) %
+                        Decimal.parse(mOf.toString())) !=
+                    Decimal.zero) {
+              errors.add(
+                ValidationError(
+                  ValidationErrorType.multipleOfInvalid,
+                  path: currentPath,
+                  details: '$numData is not a multiple of $mOf',
+                ),
+              );
+            }
+            if (numSchema.maximum case final max? when numData > max) {
+              errors.add(
+                ValidationError(
+                  ValidationErrorType.maximumExceeded,
+                  path: currentPath,
+                  details: '$numData exceeds maximum of $max',
+                ),
+              );
+            }
+            if (numSchema.exclusiveMaximum case final exMax?
+                when numData >= exMax) {
+              errors.add(
+                ValidationError(
+                  ValidationErrorType.exclusiveMaximumExceeded,
+                  path: currentPath,
+                  details: '$numData exceeds exclusive maximum of $exMax',
+                ),
+              );
+            }
+            if (numSchema.minimum case final min? when numData < min) {
+              errors.add(
+                ValidationError(
+                  ValidationErrorType.minimumNotMet,
+                  path: currentPath,
+                  details: '$numData is less than minimum of $min',
+                ),
+              );
+            }
+            if (numSchema.exclusiveMinimum case final exMin?
+                when numData <= exMin) {
+              errors.add(
+                ValidationError(
+                  ValidationErrorType.exclusiveMinimumNotMet,
+                  path: currentPath,
+                  details: '$numData is less than exclusive minimum of $exMin',
+                ),
+              );
+            }
           }
         }
         break;
@@ -679,58 +733,62 @@ extension SchemaValidation on Schema {
     final errors = <ValidationError>[];
     var annotations = AnnotationSet.empty();
 
-    if (objectSchema.minProperties case final min?
-        when data.keys.length < min) {
-      errors.add(
-        ValidationError(
-          ValidationErrorType.minPropertiesNotMet,
-          path: currentPath,
-          details:
-              'There should be at least $min properties. '
-              'Only ${data.keys.length} were found',
-        ),
-      );
-    }
-
-    if (objectSchema.maxProperties case final max?
-        when data.keys.length > max) {
-      errors.add(
-        ValidationError(
-          ValidationErrorType.maxPropertiesExceeded,
-          path: currentPath,
-          details:
-              'Exceeded maxProperties limit of $max '
-              '(${data.keys.length})',
-        ),
-      );
-    }
-
-    for (final reqProp in objectSchema.required ?? const []) {
-      if (!data.containsKey(reqProp)) {
+    if (context.vocabularies[
+            'https://json-schema.org/draft/2020-12/vocab/validation'] ==
+        true) {
+      if (objectSchema.minProperties case final min?
+          when data.keys.length < min) {
         errors.add(
           ValidationError(
-            ValidationErrorType.requiredPropertyMissing,
+            ValidationErrorType.minPropertiesNotMet,
             path: currentPath,
-            details: 'Required property "$reqProp" is missing',
+            details:
+                'There should be at least $min properties. '
+                'Only ${data.keys.length} were found',
           ),
         );
       }
-    }
 
-    if (objectSchema.dependentRequired case final dr?) {
-      for (final entry in dr.entries) {
-        if (data.containsKey(entry.key)) {
-          for (final requiredProp in entry.value) {
-            if (!data.containsKey(requiredProp)) {
-              errors.add(
-                ValidationError(
-                  ValidationErrorType.dependentRequiredMissing,
-                  path: currentPath,
-                  details:
-                      'Property "$requiredProp" is required because '
-                      'property "${entry.key}" is present.',
-                ),
-              );
+      if (objectSchema.maxProperties case final max?
+          when data.keys.length > max) {
+        errors.add(
+          ValidationError(
+            ValidationErrorType.maxPropertiesExceeded,
+            path: currentPath,
+            details:
+                'Exceeded maxProperties limit of $max '
+                '(${data.keys.length})',
+          ),
+        );
+      }
+
+      for (final reqProp in objectSchema.required ?? const []) {
+        if (!data.containsKey(reqProp)) {
+          errors.add(
+            ValidationError(
+              ValidationErrorType.requiredPropertyMissing,
+              path: currentPath,
+              details: 'Required property "$reqProp" is missing',
+            ),
+          );
+        }
+      }
+
+      if (objectSchema.dependentRequired case final dr?) {
+        for (final entry in dr.entries) {
+          if (data.containsKey(entry.key)) {
+            for (final requiredProp in entry.value) {
+              if (!data.containsKey(requiredProp)) {
+                errors.add(
+                  ValidationError(
+                    ValidationErrorType.dependentRequiredMissing,
+                    path: currentPath,
+                    details:
+                        'Property "$requiredProp" is required because '
+                        'property "${entry.key}" is present.',
+                  ),
+                );
+              }
             }
           }
         }
@@ -849,45 +907,49 @@ extension SchemaValidation on Schema {
     final errors = <ValidationError>[];
     final evaluatedItems = <int>{};
     final listSchema = this as ListSchema;
-    if (listSchema.minItems case final min? when data.length < min) {
-      errors.add(
-        ValidationError(
-          ValidationErrorType.minItemsNotMet,
-          path: currentPath,
-          details:
-              'List has ${data.length} items, but must have at '
-              'least $min',
-        ),
-      );
-    }
+    if (context.vocabularies[
+            'https://json-schema.org/draft/2020-12/vocab/validation'] ==
+        true) {
+      if (listSchema.minItems case final min? when data.length < min) {
+        errors.add(
+          ValidationError(
+            ValidationErrorType.minItemsNotMet,
+            path: currentPath,
+            details:
+                'List has ${data.length} items, but must have at '
+                'least $min',
+          ),
+        );
+      }
 
-    if (listSchema.maxItems case final max? when data.length > max) {
-      errors.add(
-        ValidationError(
-          ValidationErrorType.maxItemsExceeded,
-          path: currentPath,
-          details:
-              'List has ${data.length} items, but must have less '
-              'than $max',
-        ),
-      );
-    }
+      if (listSchema.maxItems case final max? when data.length > max) {
+        errors.add(
+          ValidationError(
+            ValidationErrorType.maxItemsExceeded,
+            path: currentPath,
+            details:
+                'List has ${data.length} items, but must have less '
+                'than $max',
+          ),
+        );
+      }
 
-    if (listSchema.uniqueItems == true) {
-      final seenItems = HashSet<Object?>(
-        equals: deepEquals,
-        hashCode: deepHashCode,
-      );
-      for (final item in data) {
-        if (!seenItems.add(item)) {
-          errors.add(
-            ValidationError(
-              ValidationErrorType.uniqueItemsViolated,
-              path: currentPath,
-              details: 'List contains duplicate items',
-            ),
-          );
-          break; // Found a duplicate, no need to check further.
+      if (listSchema.uniqueItems == true) {
+        final seenItems = HashSet<Object?>(
+          equals: deepEquals,
+          hashCode: deepHashCode,
+        );
+        for (final item in data) {
+          if (!seenItems.add(item)) {
+            errors.add(
+              ValidationError(
+                ValidationErrorType.uniqueItemsViolated,
+                path: currentPath,
+                details: 'List contains duplicate items',
+              ),
+            );
+            break; // Found a duplicate, no need to check further.
+          }
         }
       }
     }
@@ -912,40 +974,44 @@ extension SchemaValidation on Schema {
         evaluatedItems.add(index);
       }
 
-      final matchCount = matches.length;
-      if (listSchema.minContains == 0 && data.isEmpty) {
-        // This is a valid case.
-      } else if (matchCount == 0 &&
-          (listSchema.minContains == null || listSchema.minContains! > 0)) {
-        errors.add(
-          ValidationError(
-            ValidationErrorType.containsInvalid,
-            path: currentPath,
-            details: 'Array does not contain a valid item',
-          ),
-        );
-      }
-      if (listSchema.minContains case final min? when matchCount < min) {
-        errors.add(
-          ValidationError(
-            ValidationErrorType.minContainsNotMet,
-            path: currentPath,
-            details:
-                'Array must contain at least $min valid items, but found '
-                '$matchCount',
-          ),
-        );
-      }
-      if (listSchema.maxContains case final max? when matchCount > max) {
-        errors.add(
-          ValidationError(
-            ValidationErrorType.maxContainsExceeded,
-            path: currentPath,
-            details:
-                'Array must contain at most $max valid items, but found '
-                '$matchCount',
-          ),
-        );
+      if (context.vocabularies[
+              'https://json-schema.org/draft/2020-12/vocab/validation'] ==
+          true) {
+        final matchCount = matches.length;
+        if (listSchema.minContains == 0 && data.isEmpty) {
+          // This is a valid case.
+        } else if (matchCount == 0 &&
+            (listSchema.minContains == null || listSchema.minContains! > 0)) {
+          errors.add(
+            ValidationError(
+              ValidationErrorType.containsInvalid,
+              path: currentPath,
+              details: 'Array does not contain a valid item',
+            ),
+          );
+        }
+        if (listSchema.minContains case final min? when matchCount < min) {
+          errors.add(
+            ValidationError(
+              ValidationErrorType.minContainsNotMet,
+              path: currentPath,
+              details:
+                  'Array must contain at least $min valid items, but found '
+                  '$matchCount',
+            ),
+          );
+        }
+        if (listSchema.maxContains case final max? when matchCount > max) {
+          errors.add(
+            ValidationError(
+              ValidationErrorType.maxContainsExceeded,
+              path: currentPath,
+              details:
+                  'Array must contain at most $max valid items, but found '
+                  '$matchCount',
+            ),
+          );
+        }
       }
     }
 
